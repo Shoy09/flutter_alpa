@@ -256,11 +256,6 @@ Future<void> _guardarDatos() async {
   if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
     laborFinal = ubicacionController.text.trim();
   }
-  
-  if (laborFinal.isEmpty) {
-    _mostrarSnackbar('Debe ingresar o seleccionar una ubicación', Colors.orange);
-    return;
-  }
 
   Map<String, dynamic> datosFormulario = {
     'labor': laborFinal,  // Usar el texto final (sea seleccionado o escrito)

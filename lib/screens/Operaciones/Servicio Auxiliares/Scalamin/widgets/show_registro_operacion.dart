@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/Rompebancos/widgets/registro_operacion_dialog.dart';
+import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/Scalamin/widgets/registro_operacion_dialog.dart';
 
 Future<Map<String, dynamic>?> showRegistroOperacionDialog({
   required BuildContext context,

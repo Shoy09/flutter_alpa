@@ -157,30 +157,25 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
     }
   }
 
-  Future<void> _guardarDatos() async {
-    // Obtener el labor final (texto libre o seleccionado)
-    String laborFinal = laborSeleccionado ?? '';
-    
-    // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
-    if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
-      laborFinal = ubicacionController.text.trim();
-    }
-    
-    if (laborFinal.isEmpty) {
-      _mostrarSnackbar('Debe ingresar o seleccionar una ubicación', Colors.orange);
-      return;
-    }
-
-    // 🔥 SIMPLIFICADO: Solo guardamos el campo 'labor' con la cadena completa
-    Map<String, dynamic> datosFormulario = {
-      'labor': laborFinal,  // Guardamos la cadena completa (ej: "Galería_LaborA_AlaNorte")
-      'observaciones': observacionesController.text,
-    };
-
-    widget.onGuardar(datosFormulario);
-    _mostrarSnackbar('Formulario guardado correctamente', Colors.green);
-    Navigator.pop(context);
+Future<void> _guardarDatos() async {
+  // Obtener el labor final (texto libre o seleccionado)
+  String laborFinal = laborSeleccionado ?? '';
+  
+  // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
+  if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
+    laborFinal = ubicacionController.text.trim();
   }
+  
+  // 🔥 GUARDAR SI O SI - SIN VALIDACIONES
+  Map<String, dynamic> datosFormulario = {
+    'labor': laborFinal,  // Puede estar vacío
+    'observaciones': observacionesController.text,  // Puede estar vacío
+  };
+
+  widget.onGuardar(datosFormulario);
+  _mostrarSnackbar('Formulario guardado correctamente', Colors.green);
+  Navigator.pop(context);
+}
 
   void _mostrarSnackbar(String mensaje, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(

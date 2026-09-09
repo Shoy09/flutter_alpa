@@ -57,6 +57,7 @@ class ExportarScalaminService {
 
         "fecha": operacion['fecha'] ?? "",
         "turno": operacion['turno'] ?? "",
+        "guardia": operacion['guardia'] ?? "", 
         "operador": operacion['operador'] ?? "",
         "jefe_guardia": operacion['jefe_guardia'] ?? "",
         "equipo": operacion['equipo'] ?? "",

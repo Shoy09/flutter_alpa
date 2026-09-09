@@ -24,7 +24,7 @@ class ApiServiceMaterial {
             .toList();
 
         // Eliminar datos antiguos antes de insertar nuevos
-        await _dbHelper.deleteAll('materiales');
+        await _dbHelper.deleteAllShared('materiales');
  
         // Guardar en la base de datos local
         await saveMaterialesToLocalDB(materiales);
@@ -43,7 +43,7 @@ class ApiServiceMaterial {
     for (var material in materiales) {
       Map<String, dynamic> materialData = material.toMap();
       materialData.remove('id'); // Evitar conflictos con el ID
-      await _dbHelper.insert('materiales', materialData);
+      await _dbHelper.insertShared('materiales', materialData);
     }
   }
 }

@@ -25,7 +25,7 @@ class ApiServiceSeccion {
             .toList();
 
         // Eliminar datos antiguos
-        await _dbHelper.deleteAll('Seccion');
+        await _dbHelper.deleteAllShared('Seccion');
 
         // Guardar en DB local
         await saveSeccionesToLocalDB(secciones);
@@ -47,7 +47,7 @@ class ApiServiceSeccion {
 
       seccionData.remove('id'); // evitar conflicto con autoincrement
 
-      await _dbHelper.insert('Seccion', seccionData);
+      await _dbHelper.insertShared('Seccion', seccionData);
     }
   }
 }

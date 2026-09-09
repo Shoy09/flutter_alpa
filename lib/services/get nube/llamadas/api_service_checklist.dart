@@ -25,7 +25,7 @@ class ApiServiceCheckList {
             .toList();
 
         // Eliminar datos antiguos antes de insertar nuevos
-        await _dbHelper.deleteAll('checklist_items');
+        await _dbHelper.deleteAllShared('checklist_items');
 
         // Guardar en DB local sin el id
         await saveCheckListToLocalDB(items);
@@ -44,7 +44,7 @@ class ApiServiceCheckList {
     for (var item in items) {
       Map<String, dynamic> itemData = item.toMap();
       itemData.remove('id'); // No insertar id si es autoincremental local
-      await _dbHelper.insert('checklist_items', itemData);
+      await _dbHelper.insertShared('checklist_items', itemData);
     }
   }
 }

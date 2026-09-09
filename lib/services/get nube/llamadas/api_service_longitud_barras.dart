@@ -25,7 +25,7 @@ class ApiServiceLongitudBarras {
             .toList();
 
         // Limpiar tabla
-        await _dbHelper.deleteAll('longitud_barras');
+        await _dbHelper.deleteAllShared('longitud_barras');
 
         // Guardar
         await saveToLocalDB(lista);
@@ -45,7 +45,7 @@ class ApiServiceLongitudBarras {
       Map<String, dynamic> data = item.toMap();
       data.remove('id');
 
-      await _dbHelper.insert('longitud_barras', data);
+      await _dbHelper.insertShared('longitud_barras', data);
     }
   }
 }

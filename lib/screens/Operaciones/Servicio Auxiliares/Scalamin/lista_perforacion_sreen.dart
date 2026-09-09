@@ -634,28 +634,30 @@ Future<void> _crearRegistroEstado(Map<String, dynamic> data, String estado) asyn
         ? (estadosDelMismoTipo.last['numero'] as int) + 1 
         : 1;
     
-    // IMPORTANTE: Crear el objeto operacion con TODOS los campos de perforación
+    // 🔥 NUEVA ESTRUCTURA DE OPERACIÓN CON LOS CAMPOS ACTUALIZADOS
     Map<String, dynamic> operacionData = {
+      // Campos de ubicación
       'nivel': data['nivel'] ?? '',
       'tipo_labor': data['tipo_labor'] ?? '',
       'labor': data['labor'] ?? '',
       'ala': data['ala'] ?? '',
-      'tal_prod': data['tal_prod'] ?? '',
-      'tal_rimados': data['tal_rimados'] ?? '',
-      'tal_alivio': data['tal_alivio'] ?? '',
-      'tal_repaso': data['tal_repaso'] ?? '',
-      'long_barras': data['long_barras'] ?? '',
-      'num_barras': data['num_barras'] ?? '',
-      'tipo_perforacion': data['tipo_perforacion'] ?? '',
+      
+      // 🔥 NUEVOS CAMPOS (reemplazan los antiguos de perforación)
+      'metros_lineales': data['metros_lineales'] ?? 0.0,
+      'area_m2': data['area_m2'] ?? 0.0,
+      'tipo_labor_texto': data['tipo_labor_texto'] ?? '',
+      
+      // Observaciones
+      'observaciones': data['observaciones'] ?? '',
     };
     
-    // Crear nuevo estado con todos los campos de perforación
+    // Crear nuevo estado con los nuevos campos
     Map<String, dynamic>? nuevoEstado = await DatabaseHelper().createEstadoScalamin(
       operacionActual!['id'],
       estado,
       data['codigo']!,
       data['hora_inicio']!,
-      operacion: operacionData, // Pasamos el objeto completo
+      operacion: operacionData, // Pasamos el objeto con los nuevos campos
     );
     
     if (nuevoEstado != null) {
@@ -800,7 +802,7 @@ Future<void> _abrirDialogoRompebanco(int estadoId) async {
   showDialog(
     context: context,
     builder: (BuildContext context) {
-      return DialogoFormularioRompebanco(
+      return DialogoFormularioScalamin(
         operacionId: operacionActual!['id'],
         estadoId: estadoId,
         datosIniciales: datosRompebanco,
@@ -905,9 +907,10 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
     data['jefe_guardia'],
     data['equipo'],
     data['n_equipo'],
+    data['guardia'] ,
     checkListJson: checkListJson,
     horometrosBase: horometros,
-  );
+  ); 
 
   /// Refrescar UI
   await _fetchOperacionData();
@@ -953,7 +956,7 @@ Future<void> _editarOperacionOperativo(Map<String, dynamic> operacion) async {
   showDialog(
     context: context,
     builder: (BuildContext context) {
-      return DialogoFormularioRompebanco(
+      return DialogoFormularioScalamin(
         operacionId: operacionActual!['id'],
         estadoId: operacion['id'],
         datosIniciales: datosRompebanco,

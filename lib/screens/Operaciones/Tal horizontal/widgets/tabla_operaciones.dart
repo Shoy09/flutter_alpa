@@ -16,20 +16,38 @@ class TablaOperaciones extends StatelessWidget {
     required this.primaryColor,
   }) : super(key: key);
 
+  // 🔥 Función para convertir 24h → 12h con AM/PM (copiada del otro archivo)
+  String _formatTo12Hour(String time24) {
+    if (time24.isEmpty || time24 == '--:--' || time24 == '') return time24;
+    
+    try {
+      final parts = time24.split(':');
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+      
+      final period = hour >= 12 ? 'PM' : 'AM';
+      int hour12 = hour % 12;
+      if (hour12 == 0) hour12 = 12;
+      
+      return '${hour12.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
+    } catch (e) {
+      return time24;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 🔥 Copia y ordena por numero
+    final operacionesOrdenadas = List<Map<String, dynamic>>.from(operaciones);
 
-  // 🔥 Copia y ordena por numero
-  final operacionesOrdenadas = List<Map<String, dynamic>>.from(operaciones);
+    operacionesOrdenadas.sort((a, b) {
+      return (a['numero'] ?? 0).compareTo(b['numero'] ?? 0);
+    });
 
-  operacionesOrdenadas.sort((a, b) {
-    return (a['numero'] ?? 0).compareTo(b['numero'] ?? 0);
-  });
+    print('ORDENADAS:');
+    operacionesOrdenadas.forEach((e) => print(e));
 
-  print('ORDENADAS:');
-  operacionesOrdenadas.forEach((e) => print(e));
-
-  return Container(
+    return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -83,9 +101,9 @@ class TablaOperaciones extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final operacion = operacionesOrdenadas[index];
                       return _buildFilaOperacion(
-  operacion,
-  operacion['numero'] ?? (index + 1),
-);
+                        operacion,
+                        operacion['numero'] ?? (index + 1),
+                      );
                     },
                   ),
           ),
@@ -117,6 +135,10 @@ class TablaOperaciones extends StatelessWidget {
     final String estado = operacion['estado'] ?? 'OPERATIVO';
     Color estadoColor = _getEstadoColor(estado);
     IconData estadoIcon = _getEstadoIcon(estado);
+
+    // 🔥 CONVERTIR HORAS A FORMATO 12H CON AM/PM
+    final String horaInicio = _formatTo12Hour(operacion['horaInicio'] ?? '--:--');
+    final String horaFin = _formatTo12Hour(operacion['horaFin'] ?? '--:--');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -171,20 +193,20 @@ class TablaOperaciones extends StatelessWidget {
             ),
           ),
           
-          // Hora Inicio
+          // 🔥 Hora Inicio (formato 12h)
           Expanded(
             flex: 2,
             child: Text(
-              operacion['horaInicio'] ?? '--:--',
+              horaInicio,
               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
             ),
           ),
           
-          // Hora Fin
+          // 🔥 Hora Fin (formato 12h)
           Expanded(
             flex: 2,
             child: Text(
-              operacion['horaFin'] ?? '--:--',
+              horaFin,
               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
             ),
           ),

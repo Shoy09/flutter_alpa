@@ -168,10 +168,6 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
       laborFinal = ubicacionController.text.trim();
     }
     
-    if (laborFinal.isEmpty) {
-      _mostrarSnackbar('Debe ingresar o seleccionar una ubicación', Colors.orange);
-      return;
-    }
 
     // 🔥 SIMPLIFICADO: Solo guardamos el campo 'labor' con la cadena completa
     Map<String, dynamic> datosFormulario = {

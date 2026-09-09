@@ -24,7 +24,7 @@ class ApiServiceAccesorio {
             .toList();
 
         // Eliminar datos antiguos antes de insertar nuevos
-        await _dbHelper.deleteAll('accesorios');
+        await _dbHelper.deleteAllShared('accesorios');
  
         // Guardar en la base de datos local
         await saveAccesoriosToLocalDB(accesorios);
@@ -43,7 +43,7 @@ class ApiServiceAccesorio {
     for (var accesorio in accesorios) {
       Map<String, dynamic> accesorioData = accesorio.toMap();
       accesorioData.remove('id'); // Evitar conflictos con el ID
-      await _dbHelper.insert('accesorios', accesorioData);
+      await _dbHelper.insertShared('accesorios', accesorioData);
     }
   }
 }

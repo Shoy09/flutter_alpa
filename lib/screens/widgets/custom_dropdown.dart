@@ -24,10 +24,14 @@ class CustomMaterialDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final primary = primaryColor ?? colorScheme.primary;
-    final bool isEnabled = onChanged != null && items.isNotEmpty;
 
-    // ✅ Validar que el value exista en items
-    final bool valueExists = value != null && items.contains(value);
+    // Deduplicar items para evitar el assert de Flutter (valores repetidos)
+    final uniqueItems = items.toSet().toList();
+
+    final bool isEnabled = onChanged != null && uniqueItems.isNotEmpty;
+
+    // Validar que el value exista en los items deduplicados
+    final bool valueExists = value != null && uniqueItems.contains(value);
     final String? safeValue = valueExists ? value : null;
 
     return InputDecorator(
@@ -85,7 +89,7 @@ class CustomMaterialDropdown extends StatelessWidget {
             fontWeight: FontWeight.w500,
             color: isEnabled ? const Color(0xFF2C3E50) : Colors.grey[500],
           ),
-          items: items.isEmpty
+          items: uniqueItems.isEmpty
               ? [
                   DropdownMenuItem<String>(
                     value: null,
@@ -95,7 +99,7 @@ class CustomMaterialDropdown extends StatelessWidget {
                     ),
                   ),
                 ]
-              : items.map((item) {
+              : uniqueItems.map((item) {
                   return DropdownMenuItem<String>(
                     value: item,
                     child: Text(

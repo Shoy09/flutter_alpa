@@ -22,7 +22,7 @@ class ApiServiceHorometros {
         final Map<String, dynamic> data = jsonData['data'];
 
         /// 🔥 limpiar tabla antes de insertar
-        await _dbHelper.deleteAll('horometros_nube');
+        await _dbHelper.deleteAllShared('horometros_nube');
 
         /// 🔥 guardar
         await _guardarHorometros(data);
@@ -51,7 +51,7 @@ class ApiServiceHorometros {
         final tipo = tipoEntry.key;
         final valores = tipoEntry.value;
 
-        await _dbHelper.insert('horometros_nube', {
+        await _dbHelper.insertShared('horometros_nube', {
           'operacion': operacion,
           'tipo_horometro': tipo,
           'inicio': (valores['inicio'] ?? 0).toDouble(),

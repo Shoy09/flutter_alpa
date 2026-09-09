@@ -23,7 +23,7 @@ class ApiServiceMallas {
             .map((data) => Malla.fromJson(data))
             .toList();
 
-        await _dbHelper.deleteAll('mallas');
+        await _dbHelper.deleteAllShared('mallas');
         await saveToLocalDB(lista);
 
         return lista;
@@ -40,7 +40,7 @@ class ApiServiceMallas {
       Map<String, dynamic> data = item.toMap();
       data.remove('id');
 
-      await _dbHelper.insert('mallas', data);
+      await _dbHelper.insertShared('mallas', data);
     }
   }
 }

@@ -41,7 +41,7 @@ class _OperacionCardState extends State<OperacionCard> {
   String? selectedJefeGuardia;
   String? selectedSeccion;
   String? operador;
-  
+    List<Map<String, dynamic>> _operadoresDisponibles = [];
   bool get operacionBloqueada => widget.operacionExistente != null;
 
   final String operadorEjemplo = "Juan Pérez";
@@ -78,6 +78,12 @@ class _OperacionCardState extends State<OperacionCard> {
     }
   }
 
+@override
+void dispose() {
+  super.dispose();
+}
+
+
   Future<void> _cargarSecciones() async {
     try {
       final dbHelper = DatabaseHelper();
@@ -96,31 +102,101 @@ class _OperacionCardState extends State<OperacionCard> {
     }
   }
 
-  Future<void> _cargarOperadorPorDni() async {
-    if (widget.dniUsuario == null) return;
+Future<void> _cargarOperadorPorDni() async {
+  if (widget.dniUsuario == null) return;
 
-    try {
-      final dbHelper = DatabaseHelper();
-      final usuario = await dbHelper.getUserByDni(widget.dniUsuario!);
+  try {
+    final dbHelper = DatabaseHelper();
+    final usuario = await dbHelper.getUserByDni(widget.dniUsuario!);
 
-      if (usuario != null) {
-        setState(() {
-          operador = '${usuario['nombres']} ${usuario['apellidos']}';
-        });
-        print('Operador cargado: $operador');
+    if (usuario != null) {
+      final String empresa = usuario['empresa'] ?? '';
+      final String nombres = usuario['nombres'] ?? '';
+      final String apellidos = usuario['apellidos'] ?? '';
+      
+      // Verificar si la empresa es Seminco
+      if (empresa.toUpperCase() == 'SEMINCO') {
+        // Si es Seminco, cargar todos los usuarios para seleccionar operador
+        await _cargarOperadoresSeminco();
       } else {
-        print('No se encontró usuario con DNI: ${widget.dniUsuario}');
+        // Si no es Seminco, usar el operador automático
         setState(() {
-          operador = operadorEjemplo;
+          operador = '$nombres $apellidos';  // ✅ "Nombre Apellido"
+          // Limpiar lista de operadores si existe
+          _operadoresDisponibles = [];
         });
+        print('Operador automático cargado: $operador (Empresa: $empresa)');
       }
-    } catch (e) {
-      print('Error al cargar operador: $e');
+    } else {
+      print('No se encontró usuario con DNI: ${widget.dniUsuario}');
       setState(() {
         operador = operadorEjemplo;
+        _operadoresDisponibles = [];
       });
     }
+  } catch (e) {
+    print('Error al cargar operador: $e');
+    setState(() {
+      operador = operadorEjemplo;
+      _operadoresDisponibles = [];
+    });
   }
+}
+
+Future<void> _cargarOperadoresSeminco() async {
+  try {
+    final dbHelper = DatabaseHelper();
+    final List<Map<String, dynamic>> usuarios = await dbHelper.getAllUsuarios();
+    
+    // Obtener el usuario actual por DNI
+    final usuarioActual = await dbHelper.getUserByDni(widget.dniUsuario!);
+    final String nombreCompletoActual = usuarioActual != null 
+        ? '${usuarioActual['nombres']} ${usuarioActual['apellidos']}'
+        : '';
+    
+    // Ordenar: primero el usuario actual, luego el resto alfabéticamente
+    List<Map<String, dynamic>> operadoresOrdenados = List.from(usuarios);
+    operadoresOrdenados.sort((a, b) {
+      final String nombreA = '${a['nombres']} ${a['apellidos']}';
+      final String nombreB = '${b['nombres']} ${b['apellidos']}';
+      
+      if (nombreA == nombreCompletoActual) return -1;
+      if (nombreB == nombreCompletoActual) return 1;
+      return nombreA.compareTo(nombreB);
+    });
+    
+    setState(() {
+      _operadoresDisponibles = operadoresOrdenados;
+      
+      if (_operadoresDisponibles.isNotEmpty) {
+        // Buscar el usuario actual por nombre completo
+        final usuarioActualEncontrado = _operadoresDisponibles.firstWhere(
+          (op) => '${op['nombres']} ${op['apellidos']}' == nombreCompletoActual,
+          orElse: () => _operadoresDisponibles.first,
+        );
+        operador = '${usuarioActualEncontrado['nombres']} ${usuarioActualEncontrado['apellidos']}';
+      } else {
+        operador = 'Sin operadores disponibles';
+        _operadoresDisponibles = [];
+      }
+    });
+    
+    print('Operadores de Seminco cargados: ${_operadoresDisponibles.length}');
+    print('Usuario actual seleccionado: $operador');
+  } catch (e) {
+    print('Error al cargar operadores de Seminco: $e');
+    setState(() {
+      _operadoresDisponibles = [];
+      operador = 'Error al cargar operadores';
+    });
+  }
+}
+
+
+
+
+
+
 
   Future<void> _cargarEquipos() async {
     try {
@@ -353,7 +429,7 @@ class _OperacionCardState extends State<OperacionCard> {
         
         // Fila 2: Solo Código (Equipo y Modelo van ocultos)
         CustomMaterialDropdown(
-          label: 'Código',
+          label: 'código de equipo',
           value: selectedCodigo,
           items: codigosFiltrados,
           onChanged: operacionBloqueada
@@ -365,7 +441,7 @@ class _OperacionCardState extends State<OperacionCard> {
                   });
                 },
           icon: Icons.qr_code,
-          hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'Código',
+          hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'código de equipo',
           primaryColor: widget.primaryColor,
         ),
         const SizedBox(height: 12),
@@ -433,7 +509,7 @@ class _OperacionCardState extends State<OperacionCard> {
         
         // Fila 2: Código
         CustomMaterialDropdown(
-          label: 'Código',
+          label: 'código de equipo',
           value: selectedCodigo,
           items: codigosFiltrados,
           onChanged: operacionBloqueada
@@ -445,7 +521,7 @@ class _OperacionCardState extends State<OperacionCard> {
                   });
                 },
           icon: Icons.qr_code,
-          hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'Código',
+          hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'código de equipo',
           primaryColor: widget.primaryColor,
         ),
         const SizedBox(height: 16),
@@ -522,7 +598,7 @@ class _OperacionCardState extends State<OperacionCard> {
         _buildFlexibleField(
           width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['codigo']!),
           child: CustomMaterialDropdown(
-            label: 'Código',
+            label: 'código de equipo',
             value: selectedCodigo,
             items: codigosFiltrados,
             onChanged: operacionBloqueada
@@ -534,7 +610,7 @@ class _OperacionCardState extends State<OperacionCard> {
                     });
                   },
             icon: Icons.qr_code,
-            hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'Código',
+            hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'código de equipo',
             primaryColor: widget.primaryColor,
           ),
         ),
@@ -639,43 +715,252 @@ class _OperacionCardState extends State<OperacionCard> {
     );
   }
 
-  Widget _buildOperadorField() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-        color: Colors.grey.shade50,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Operador',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600),
-                ),
-                Text(
-                  operador ?? operadorEjemplo,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
+Widget _buildOperadorField() {
+  bool isSeminco = _operadoresDisponibles.isNotEmpty;
+  bool isEnabled = !operacionBloqueada;
+
+  // Caso Seminco: campo tipo "select" que abre un buscador en bottom sheet
+  if (isSeminco) {
+    return InkWell(
+      onTap: isEnabled ? () => _mostrarSelectorOperador(context) : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isEnabled
+                ? widget.primaryColor.withOpacity(0.5)
+                : Colors.grey.shade300,
           ),
-          Icon(Icons.person_outline,
-              size: 16,
-              color: Colors.grey.shade400),
-        ],
+          borderRadius: BorderRadius.circular(8),
+          color: isEnabled ? Colors.white : Colors.grey.shade50,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Operador',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isEnabled ? widget.primaryColor : Colors.grey,
+                    ),
+                  ),
+                  Text(
+                    operador ?? 'Seleccionar operador',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: isEnabled ? Colors.black87 : Colors.grey,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 20,
+              color: isEnabled ? widget.primaryColor : Colors.grey,
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  // Caso no-Seminco: campo fijo, no editable (se mantiene igual)
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.grey.shade300),
+      borderRadius: BorderRadius.circular(8),
+      color: Colors.grey.shade50,
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Operador',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
+              Text(
+                operador ?? operadorEjemplo,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+        Icon(Icons.person_outline, size: 16, color: Colors.grey.shade400),
+      ],
+    ),
+  );
+}
+
+void _mostrarSelectorOperador(BuildContext context) {
+  String searchText = '';
+  final TextEditingController searchCtrl = TextEditingController();
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final List<Map<String, dynamic>> filtrados = searchText.isEmpty
+              ? _operadoresDisponibles
+              : _operadoresDisponibles.where((op) {
+                  final nombreCompleto =
+                      '${op['nombres']} ${op['apellidos']}'.toLowerCase();
+                  return nombreCompleto.contains(searchText.toLowerCase());
+                }).toList();
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            child: DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (ctx, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Seleccionar operador',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: widget.primaryColor,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: searchCtrl,
+                              autofocus: true,
+                              onChanged: (v) =>
+                                  setModalState(() => searchText = v),
+                              decoration: InputDecoration(
+                                hintText: 'Buscar operador...',
+                                prefixIcon:
+                                    Icon(Icons.search, color: widget.primaryColor),
+                                suffixIcon: searchText.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 18),
+                                        onPressed: () {
+                                          searchCtrl.clear();
+                                          setModalState(() => searchText = '');
+                                        },
+                                      )
+                                    : null,
+                                filled: true,
+                                fillColor: Colors.grey.shade100,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: filtrados.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No se encontraron operadores',
+                                  style: TextStyle(
+                                      color: Colors.grey, fontStyle: FontStyle.italic),
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: scrollController,
+                                itemCount: filtrados.length,
+                                itemBuilder: (ctx, i) {
+                                  final op = filtrados[i];
+                                  final nombreCompleto =
+                                      '${op['nombres']} ${op['apellidos']}';
+                                  final isSelected = nombreCompleto == operador;
+
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: isSelected
+                                          ? widget.primaryColor
+                                          : Colors.grey.shade300,
+                                      child: const Icon(Icons.person,
+                                          color: Colors.white, size: 16),
+                                    ),
+                                    title: Text(
+                                      nombreCompleto,
+                                      style: TextStyle(
+                                        fontWeight: isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        color: isSelected
+                                            ? widget.primaryColor
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                    trailing: isSelected
+                                        ? Icon(Icons.check_circle,
+                                            color: widget.primaryColor)
+                                        : null,
+                                    onTap: () {
+                                      setState(() => operador = nombreCompleto);
+                                      Navigator.pop(ctx);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+
+
+
 
   Widget _buildCreateButton() {
     return SizedBox(
@@ -735,6 +1020,13 @@ class _OperacionCardState extends State<OperacionCard> {
       return;
     }
 
+    // Validar operador para Seminco
+  if (_operadoresDisponibles.isNotEmpty && operador == null) {
+    _showSnackbar('Seleccione un operador', Colors.orange);
+    return;
+  }
+
+
     // Validación adicional: si por algún motivo no se asignó el modelo
     if (selectedModelo == null) {
       _showSnackbar('Error: No se pudo determinar el modelo del equipo', Colors.red);
@@ -759,7 +1051,7 @@ class _OperacionCardState extends State<OperacionCard> {
       selectedModelo = null;
       selectedJefeGuardia = null;
       selectedSeccion = null;
-      
+      _operadoresDisponibles = []; 
       // Restaurar la lista completa de códigos
       codigosFiltrados = _obtenerTodosLosCodigos();
       

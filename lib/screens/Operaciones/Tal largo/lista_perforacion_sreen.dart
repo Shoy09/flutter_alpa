@@ -673,7 +673,7 @@ Future<void> _crearRegistroEstado(Map<String, dynamic> data, String estado) asyn
       await _fetchOperacionData();
       
       // Mostrar diálogo secundario según el estado
-      _mostrarDialogoSecundario(nuevoEstado['id'], estado);
+      _mostrarDialogoSecundario(nuevoEstado['id'], estado, data['codigo']!);
     }
   } catch (e) {
     _mostrarSnackBar("Error al crear registro: $e", Colors.red);
@@ -786,13 +786,13 @@ Future<List<Map<String, dynamic>>> _getOperaciones() async {
 }
 
 
-void _mostrarDialogoSecundario(int estadoId, String estado) async {
+void _mostrarDialogoSecundario(int estadoId, String estado, String codigo) async {
   if (operacionActual == null) return;
 
   Future.delayed(Duration.zero, () {
     if (estado == "OPERATIVO") {
       // 📌 CASO 1: ES OPERATIVO → Formulario de perforación
-      _abrirDialogoPerforacion(estadoId);
+      _abrirDialogoPerforacion(estadoId, codigo);
     } else {
       // 📌 CASO 2: NO ES OPERATIVO → Mi nuevo diálogo específico
       _abrirDialogoNoOperativo(estadoId, estado);
@@ -801,7 +801,7 @@ void _mostrarDialogoSecundario(int estadoId, String estado) async {
 }
 
 // Método para OPERATIVO
-Future<void> _abrirDialogoPerforacion(int estadoId) async {
+Future<void> _abrirDialogoPerforacion(int estadoId, String codigo) async {
   Map<String, dynamic> datosPerforacion = await DatabaseHelper()
       .getOperacionByEstadoId(operacionActual!['id'], estadoId);
 
@@ -814,6 +814,7 @@ Future<void> _abrirDialogoPerforacion(int estadoId) async {
         datosIniciales: datosPerforacion,
         estado: "OPERATIVO",
         primaryColor: primaryColor,
+        codigo: codigo,
         onGuardar: (datosActualizados) async {
           bool guardado = await DatabaseHelper().updateOperacionByEstadoId(
             operacionActual!['id'],
@@ -968,6 +969,7 @@ Future<void> _editarOperacionOperativo(Map<String, dynamic> operacion) async {
         datosIniciales: datosPerforacion,
         estado: "OPERATIVO",
         primaryColor: primaryColor,
+        codigo: operacion['codigo'] ?? '',  
         onGuardar: (datosActualizados) async {
           bool guardado = await DatabaseHelper().updateOperacionByEstadoId(
             operacionActual!['id'],

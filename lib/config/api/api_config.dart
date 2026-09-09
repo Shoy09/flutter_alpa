@@ -1,6 +1,6 @@
 class ApiConfig {
 static const String baseUrl = 
-'https://api-seminco-catalina-huanca.vercel.app/api';
+'https://api-catalina-b7fhctc3e7gaf5ca.canadacentral-01.azurewebsites.net/api';
 //'https://backend-seminco-pro-02.vercel.app/api';
       //'https://backend-seminco-mina-02.onrender.com/api';
       // 'https://backendseminco-production.up.railway.app/api';
@@ -9,6 +9,8 @@ static const String baseUrl =
   static const String checklistEndpoint = '/check-list';
   static const String fechasPlanMensualEndpoint = '/fechas-plan-mensual/';
   static const String jefe_guardias= '/usuarios/guardia/';
+  // En api_config.dart
+static const String usuariosNombresEndpoint = '/usuarios/nombres';
   static const String EquipoEndpoint = '/Equipo/';
   static const String tipoPerforacionEndpoint = '/TipoPerfpo/';
   
@@ -33,5 +35,8 @@ static const String baseUrl =
   static const String datosExploracionesEndpoint = '/NubeDatosExploraciones';
       static const String datosExploracionesmedionesEndpoint = '/NubeDatosExploraciones/Explo-medicion';
       static const String medicionesHorizontalEndpoint = '/medicion-tal-horizontal';
-
+static const String pdfEndpoint = '/pdf-operacion';
+    static const String carpetasEndpoint = '/carpetas';
+    static const String usuariosEndpoint = '/usuarios/usuarios/';
+    static const String tipoLaborEndpoint = '/tipo-Labor';
 }

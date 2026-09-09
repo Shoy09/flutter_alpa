@@ -25,7 +25,7 @@ class ApiServiceEstado {
             responseData.map((data) => EstadostBD.fromJson(data)).toList();
 
         /// 🔹 Limpiar tabla antes de insertar
-        await _dbHelper.deleteAll('EstadostBD');
+        await _dbHelper.deleteAllShared('EstadostBD');
 
         /// 🔹 Guardar estados
         await saveEstadosToLocalDB(estados);
@@ -49,7 +49,7 @@ class ApiServiceEstado {
       Map<String, dynamic> estadoData = estado.toMap();
       estadoData.remove('id'); // SQLite autogenera
 
-      await _dbHelper.insert('EstadostBD', estadoData);
+      await _dbHelper.insertShared('EstadostBD', estadoData);
 
     }
   }

@@ -29,29 +29,24 @@ class DialogoFormularioNoOpePerforacion extends StatefulWidget {
 class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpePerforacion> {
   bool isEditable = false;
   bool isLoading = true;
+  bool isSmallScreen = false;
+
+  // 🔥 Controlador para ubicación combinada (como en la versión 1)
+  final TextEditingController ubicacionController = TextEditingController();
+  FocusNode ubicacionFocusNode = FocusNode();
+  bool mostrarSugerencias = false;
+
+  // 🔥 Variable para la ubicación seleccionada (cadena combinada) - SOLO SE GUARDA ESTO
+  String? laborSeleccionado;
 
   // Controlador para observaciones
   final TextEditingController observacionesController = TextEditingController();
 
-  // Variables para los campos seleccionables (NUEVO ORDEN)
-  String? tipoLaborSeleccionado;    // 1º
-  String? laborSeleccionado;         // 2º  
-  String? alaSeleccionado;           // 3º
-  String? nivelSeleccionado;         // 4º (manejado internamente, no visible)
-
-  // Opciones para los dropdowns
-  List<String> opcionesNivel = [];
-  List<String> opcionesTipoLabor = [];
-  List<String> opcionesLabor = [];
-  List<String> opcionesAla = [];
-
-  // Listas filtradas para la selección en cascada
-  List<String> filteredTiposLabor = [];
-  List<String> filteredLabores = [];
-  List<String> filteredAlas = [];
-  List<String> filteredNiveles = [];  // Para filtrar niveles internamente
-
-  // Almacenar objetos completos para referencia
+  // 🔥 Opciones combinadas para el buscador
+  List<String> opcionesUbicacionCombinadas = [];
+  List<String> opcionesUbicacionFiltradas = [];
+  
+  // Almacenar objetos completos
   List<PlanMensual> planesMensualCompletos = [];
   List<PlanProduccion> planesProduccionCompletos = [];
   List<PlanMetraje> planesMetrajeCompletos = [];
@@ -90,251 +85,95 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
       planesProduccionCompletos = results[1] as List<PlanProduccion>;
       planesMetrajeCompletos = results[2] as List<PlanMetraje>;
 
-      Set<String> nivelesSet = {};
-      Set<String> tiposLaborSet = {};
-      Set<String> laboresSet = {};
-      Set<String> alasSet = {};
-
-      // Procesar PlanMensual
-      for (var plan in planesMensualCompletos) {
-        if (plan.nivel?.isNotEmpty ?? false) nivelesSet.add(plan.nivel!);
-        if (plan.tipoLabor?.isNotEmpty ?? false) tiposLaborSet.add(plan.tipoLabor!);
-        if (plan.labor?.isNotEmpty ?? false) laboresSet.add(plan.labor!);
-        if (plan.ala?.isNotEmpty ?? false) alasSet.add(plan.ala!);
-      }
-
-      // Procesar PlanProduccion
-      for (var plan in planesProduccionCompletos) {
-        if (plan.nivel?.isNotEmpty ?? false) nivelesSet.add(plan.nivel!);
-        if (plan.tipoLabor?.isNotEmpty ?? false) tiposLaborSet.add(plan.tipoLabor!);
-        if (plan.labor?.isNotEmpty ?? false) laboresSet.add(plan.labor!);
-        if (plan.ala?.isNotEmpty ?? false) alasSet.add(plan.ala!);
-      }
-
-      // Procesar PlanMetraje
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.nivel?.isNotEmpty ?? false) nivelesSet.add(plan.nivel!);
-        if (plan.tipoLabor?.isNotEmpty ?? false) tiposLaborSet.add(plan.tipoLabor!);
-        if (plan.labor?.isNotEmpty ?? false) laboresSet.add(plan.labor!);
-        if (plan.ala?.isNotEmpty ?? false) alasSet.add(plan.ala!);
-      }
-
-      setState(() {
-        opcionesNivel = nivelesSet.toList()..sort();
-        opcionesTipoLabor = tiposLaborSet.toList()..sort();
-        opcionesLabor = laboresSet.toList()..sort();
-        opcionesAla = alasSet.toList()..sort();
-
-        filteredTiposLabor = List.from(opcionesTipoLabor);
-        filteredLabores = List.from(opcionesLabor);
-        filteredAlas = List.from(opcionesAla);
-        filteredNiveles = List.from(opcionesNivel);
-      });
-
+      // 🔥 Generar opciones combinadas para ubicación
+      _generarOpcionesUbicacion();
+      
     } catch (e) {
-      print("Error cargando planes combinados: $e");
+      print("Error cargando planes: $e");
       setState(() {
-        opcionesNivel = ['Nv 300', 'Nv 320', 'Nv 340', 'Nv 360'];
-        opcionesTipoLabor = ['Galería', 'Crucero', 'Rampa', 'Chimenea'];
-        opcionesLabor = ['Labor 01', 'Labor 02', 'Labor 03', 'Labor 04'];
-        opcionesAla = ['Ala Norte', 'Ala Sur', 'Ala Este', 'Ala Oeste'];
-        
-        filteredTiposLabor = List.from(opcionesTipoLabor);
-        filteredLabores = List.from(opcionesLabor);
-        filteredAlas = List.from(opcionesAla);
-        filteredNiveles = List.from(opcionesNivel);
+        opcionesUbicacionCombinadas = [
+          'Galería_LaborA_AlaNorte',
+          'Galería_LaborA_AlaSur',
+          'Crucero_LaborB_AlaEste',
+          'Rampa_LaborC_AlaOeste',
+          'Chimenea_LaborD_AlaNorte',
+        ];
+        opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
       });
     }
   }
 
-  // NUEVAS FUNCIONES DE FILTRADO (orden: Tipo Labor → Labor → Ala)
-  void _onTipoLaborChanged(String? nuevoTipoLabor) {
+  // 🔥 GENERAR OPCIONES COMBINADAS (como en la versión 1)
+  void _generarOpcionesUbicacion() {
+    Set<String> opcionesCombinadas = {};
+    
+    // Combinar datos de PlanMensual
+    for (var plan in planesMensualCompletos) {
+      String combinado = '';
+      if (plan.tipoLabor?.isNotEmpty ?? false) combinado += plan.tipoLabor!;
+      if (plan.labor?.isNotEmpty ?? false) combinado += '_${plan.labor!}';
+      if (plan.ala?.isNotEmpty ?? false) combinado += '_${plan.ala!}';
+      
+      if (combinado.isNotEmpty) opcionesCombinadas.add(combinado);
+    }
+    
+    // Combinar datos de PlanProduccion
+    for (var plan in planesProduccionCompletos) {
+      String combinado = '';
+      if (plan.tipoLabor?.isNotEmpty ?? false) combinado += plan.tipoLabor!;
+      if (plan.labor?.isNotEmpty ?? false) combinado += '_${plan.labor!}';
+      if (plan.ala?.isNotEmpty ?? false) combinado += '_${plan.ala!}';
+      
+      if (combinado.isNotEmpty) opcionesCombinadas.add(combinado);
+    }
+    
+    // Combinar datos de PlanMetraje
+    for (var plan in planesMetrajeCompletos) {
+      String combinado = '';
+      if (plan.tipoLabor?.isNotEmpty ?? false) combinado += plan.tipoLabor!;
+      if (plan.labor?.isNotEmpty ?? false) combinado += '_${plan.labor!}';
+      if (plan.ala?.isNotEmpty ?? false) combinado += '_${plan.ala!}';
+      
+      if (combinado.isNotEmpty) opcionesCombinadas.add(combinado);
+    }
+    
     setState(() {
-      tipoLaborSeleccionado = nuevoTipoLabor;
-      laborSeleccionado = null;
-      alaSeleccionado = null;
-      nivelSeleccionado = null;
-      _actualizarFiltros();
+      opcionesUbicacionCombinadas = opcionesCombinadas.toList()..sort();
+      opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
     });
   }
 
-  void _onLaborChanged(String? nuevoLabor) {
-    setState(() {
-      laborSeleccionado = nuevoLabor;
-      alaSeleccionado = null;
-      nivelSeleccionado = null;
-      _actualizarFiltros();
-    });
-  }
-
-  void _onAlaChanged(String? nuevoAla) {
-    setState(() {
-      alaSeleccionado = nuevoAla;
-      nivelSeleccionado = null;
-      _actualizarFiltros();
-    });
-  }
-
-  void _actualizarFiltros() {
-    // Filtrar Labores basado en Tipo Labor
-    if (tipoLaborSeleccionado != null) {
-      Set<String> laboresFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        if (plan.tipoLabor == tipoLaborSeleccionado &&
-            (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        if (plan.tipoLabor == tipoLaborSeleccionado &&
-            (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.tipoLabor == tipoLaborSeleccionado &&
-            (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      filteredLabores = laboresFiltrados.toList()..sort();
-    } else {
-      filteredLabores = List.from(opcionesLabor);
-    }
-
-    // Filtrar Alas basado en Tipo Labor y Labor
-    if (tipoLaborSeleccionado != null && laborSeleccionado != null) {
-      Set<String> alasFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        if (plan.tipoLabor == tipoLaborSeleccionado &&
-            plan.labor == laborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        if (plan.tipoLabor == tipoLaborSeleccionado &&
-            plan.labor == laborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.tipoLabor == tipoLaborSeleccionado &&
-            plan.labor == laborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      filteredAlas = alasFiltrados.toList()..sort();
-    } else {
-      filteredAlas = List.from(opcionesAla);
-    }
-
-    // Filtrar Niveles (INTERNO, NO VISIBLE)
-    // Filtra por tipo labor + labor + ala
-    if (tipoLaborSeleccionado != null && laborSeleccionado != null) {
-      Set<String> nivelesFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        bool coincideBase = plan.tipoLabor == tipoLaborSeleccionado &&
-            plan.labor == laborSeleccionado;
-        
-        bool coincideAla = alaSeleccionado == null ||
-            alaSeleccionado!.isEmpty ||
-            plan.ala == alaSeleccionado;
-
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        bool coincideBase = plan.tipoLabor == tipoLaborSeleccionado &&
-            plan.labor == laborSeleccionado;
-        
-        bool coincideAla = alaSeleccionado == null ||
-            alaSeleccionado!.isEmpty ||
-            plan.ala == alaSeleccionado;
-
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        bool coincideBase = plan.tipoLabor == tipoLaborSeleccionado &&
-            plan.labor == laborSeleccionado;
-        
-        bool coincideAla = alaSeleccionado == null ||
-            alaSeleccionado!.isEmpty ||
-            plan.ala == alaSeleccionado;
-
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      filteredNiveles = nivelesFiltrados.toList()..sort();
-
-      // Auto seleccionar nivel internamente
-      if (filteredNiveles.isNotEmpty) {
-        if (nivelSeleccionado == null || !filteredNiveles.contains(nivelSeleccionado)) {
-          nivelSeleccionado = filteredNiveles.first;
-        }
-      } else {
-        nivelSeleccionado = null;
-      }
-    } else {
-      filteredNiveles = List.from(opcionesNivel);
-      // No auto-seleccionar nivel si no hay filtros completos
-      if (tipoLaborSeleccionado == null || laborSeleccionado == null) {
-        nivelSeleccionado = null;
-      }
-    }
-  }
-
+  // 🔥 CARGAR DATOS INICIALES (solo labor)
   void _cargarDatosIniciales() {
     if (widget.datosIniciales != null) {
       setState(() {
-        // Cargar en el nuevo orden (Tipo Labor → Labor → Ala → Nivel interno)
-        tipoLaborSeleccionado = widget.datosIniciales!['tipo_labor']?.isNotEmpty == true 
-            ? widget.datosIniciales!['tipo_labor'] 
-            : null;
+        // 🔥 SIMPLIFICADO: Ahora solo cargamos el campo 'labor' que contiene la cadena completa
         laborSeleccionado = widget.datosIniciales!['labor']?.isNotEmpty == true 
             ? widget.datosIniciales!['labor'] 
             : null;
-        alaSeleccionado = widget.datosIniciales!['ala']?.isNotEmpty == true 
-            ? widget.datosIniciales!['ala'] 
-            : null;
-        nivelSeleccionado = widget.datosIniciales!['nivel']?.isNotEmpty == true 
-            ? widget.datosIniciales!['nivel'] 
-            : null;
+        
+        if (laborSeleccionado != null) {
+          ubicacionController.text = laborSeleccionado!;
+        }
         
         observacionesController.text = widget.datosIniciales!['observaciones'] ?? '';
-      });
-      
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _actualizarFiltros();
       });
     }
   }
 
+  // 🔥 GUARDAR DATOS (solo labor)
   Future<void> _guardarDatos() async {
+    // Obtener el labor final (texto libre o seleccionado)
+    String laborFinal = laborSeleccionado ?? '';
+    
+    // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
+    if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
+      laborFinal = ubicacionController.text.trim();
+    }
+    
+    // 🔥 GUARDAR SOLO 'labor' (cadena combinada) y observaciones
     Map<String, dynamic> datosFormulario = {
-      // NUEVO ORDEN: tipo_labor, labor, ala, nivel (interno)
-      'tipo_labor': tipoLaborSeleccionado ?? '',
-      'labor': laborSeleccionado ?? '',
-      'ala': alaSeleccionado ?? '',
-      'nivel': nivelSeleccionado ?? '',
+      'labor': laborFinal,  // Solo este campo + observaciones
       'observaciones': observacionesController.text,
     };
 
@@ -357,19 +196,24 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
   @override
   void dispose() {
     observacionesController.dispose();
+    ubicacionController.dispose();
+    ubicacionFocusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    isSmallScreen = screenWidth < 600;
+
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
       child: Container(
-        width: 900, // Aumentado de 800 a 900 para 3 campos visibles
+        width: isSmallScreen ? screenWidth * 0.95 : 800,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.7,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
           maxWidth: MediaQuery.of(context).size.width * 0.9,
         ),
         decoration: BoxDecoration(
@@ -377,60 +221,29 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
           color: Colors.white,
         ),
         child: isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(
+                child: CircularProgressIndicator(),
+              )
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildHeader(),
+                  
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
+                      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // SECCIÓN: Ubicación con NUEVO ORDEN (sin Nivel visible)
-                          _buildSeccionCompacta(
-                            icon: Icons.location_on,
-                            titulo: 'Ubicación',
-                            children: [
-                              _buildCompactDropdownField(
-                                label: 'Tipo Labor',        // 1º
-                                value: tipoLaborSeleccionado,
-                                items: filteredTiposLabor,
-                                onChanged: isEditable ? _onTipoLaborChanged : null,
-                                icon: Icons.construction,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildCompactDropdownField(
-                                label: 'Labor',              // 2º
-                                value: laborSeleccionado,
-                                items: filteredLabores,
-                                onChanged: (tipoLaborSeleccionado != null && isEditable) 
-                                    ? _onLaborChanged 
-                                    : null,
-                                icon: Icons.factory,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildCompactDropdownField(
-                                label: 'Ala',                // 3º
-                                value: alaSeleccionado,
-                                items: filteredAlas,
-                                onChanged: (laborSeleccionado != null && isEditable) 
-                                    ? _onAlaChanged 
-                                    : null,
-                                icon: Icons.compare_arrows,
-                              ),
-                              // ❌ NOTA: El campo Nivel ya no se muestra, se maneja internamente
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 20),
-                          
+                          // 🔥 SECCIÓN DE UBICACIÓN CON BUSCADOR (igual que versión 1)
+                          _buildSeccionUbicacion(),
+                          const SizedBox(height: 16),
                           _buildSeccionObservaciones(),
                         ],
                       ),
                     ),
                   ),
+                  
                   _buildFooter(),
                 ],
               ),
@@ -438,118 +251,265 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
     );
   }
 
-  Widget _buildSeccionObservaciones() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: widget.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Icon(Icons.note_alt, size: 14, color: widget.primaryColor),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Observaciones',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: widget.primaryColor,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          height: 100,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: TextField(
-            controller: observacionesController,
-            enabled: isEditable,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            decoration: InputDecoration(
-              hintText: 'Ingrese observaciones...',
-              hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-              prefixIcon: Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Icon(
-                  Icons.comment,
-                  size: 18,
-                  color: widget.primaryColor.withOpacity(0.7),
+  // 🔥 SECCIÓN DE UBICACIÓN CON BUSCADOR (copiada de la versión 1)
+  Widget _buildSeccionUbicacion() {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
                 ),
+                child: const Icon(Icons.location_on, size: 12, color: Colors.green),
               ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              alignLabelWithHint: true,
-            ),
-            style: const TextStyle(fontSize: 14),
+              const SizedBox(width: 6),
+              const Text(
+                'Labor (TipoLabor_Labor_Ala)',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green),
+              ),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 🔥 CAMPO DE BÚSQUEDA CON AUTOCOMPLETADO
+              TextField(
+                controller: ubicacionController,
+                focusNode: ubicacionFocusNode,
+                enabled: isEditable,
+                style: const TextStyle(fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Buscar o escribir nueva ubicación...',
+                  hintStyle: const TextStyle(fontSize: 11),
+                  prefixIcon: Icon(Icons.search, size: 16, color: widget.primaryColor),
+                  suffixIcon: ubicacionController.text.isNotEmpty && isEditable
+                      ? IconButton(
+                          icon: Icon(Icons.clear, size: 14, color: Colors.grey.shade500),
+                          onPressed: () {
+                            ubicacionController.clear();
+                            setState(() {
+                              opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
+                              mostrarSugerencias = false;
+                              laborSeleccionado = null;
+                            });
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  isDense: true,
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                onChanged: (text) {
+                  setState(() {
+                    if (text.isEmpty) {
+                      opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
+                      mostrarSugerencias = false;
+                      laborSeleccionado = null;
+                      return;
+                    }
+                    
+                    // Filtrar sugerencias
+                    opcionesUbicacionFiltradas = opcionesUbicacionCombinadas
+                        .where((item) => item.toLowerCase().contains(text.toLowerCase()))
+                        .toList();
+                    
+                    // Verificar si es match exacto
+                    final esMatchExacto = opcionesUbicacionCombinadas
+                        .any((item) => item.toLowerCase() == text.toLowerCase());
+                    
+                    if (esMatchExacto) {
+                      mostrarSugerencias = true;
+                    } else if (opcionesUbicacionFiltradas.isNotEmpty) {
+                      mostrarSugerencias = true;
+                    } else {
+                      laborSeleccionado = text;
+                      mostrarSugerencias = false;
+                    }
+                  });
+                },
+                onTap: () {
+                  setState(() {
+                    mostrarSugerencias = true;
+                    if (ubicacionController.text.isEmpty) {
+                      opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
+                    }
+                  });
+                },
+              ),
+              
+              // 🔥 SUGERENCIAS (igual que versión 1)
+              if (mostrarSugerencias && opcionesUbicacionFiltradas.isNotEmpty && isEditable)
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey.shade300),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: opcionesUbicacionFiltradas.length,
+                    itemBuilder: (context, index) {
+                      final suggestion = opcionesUbicacionFiltradas[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          suggestion,
+                          style: const TextStyle(fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () {
+                          setState(() {
+                            laborSeleccionado = suggestion;
+                            ubicacionController.text = suggestion;
+                            mostrarSugerencias = false;
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+              
+              // 🔥 BADGE DE SELECCIÓN (igual que versión 1)
+              if (laborSeleccionado != null && ubicacionController.text.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: widget.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: widget.primaryColor.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, size: 12, color: widget.primaryColor),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          laborSeleccionado!,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: widget.primaryColor),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isEditable)
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              laborSeleccionado = null;
+                              ubicacionController.clear();
+                              opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
+                            });
+                          },
+                          child: Icon(Icons.close, size: 14, color: Colors.grey.shade500),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          
+          if (opcionesUbicacionCombinadas.isEmpty && !isLoading)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'No hay ubicaciones disponibles',
+                style: TextStyle(fontSize: 11, color: Colors.red.shade400),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  Widget _buildSeccionCompacta({
-    required IconData icon,
-    required String titulo,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: widget.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
+  // 🔥 SECCIÓN OBSERVACIONES (igual que versión 1)
+  Widget _buildSeccionObservaciones() {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: widget.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Icon(Icons.note_alt, size: 12, color: widget.primaryColor),
               ),
-              child: Icon(icon, size: 14, color: widget.primaryColor),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              titulo,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: widget.primaryColor,
+              const SizedBox(width: 6),
+              Text(
+                'Observaciones',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: widget.primaryColor),
               ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: isSmallScreen ? 70 : 60,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade300),
             ),
-            const SizedBox(width: 8),
-            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: children.map((child) {
-            if (child is SizedBox && child.width == 8) {
-              return child;
-            }
-            return Expanded(child: child);
-          }).toList(),
-        ),
-      ],
+            child: TextField(
+              controller: observacionesController,
+              enabled: isEditable,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: InputDecoration(
+                hintText: 'Ingrese observaciones...',
+                hintStyle: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Icon(Icons.comment, size: 14, color: widget.primaryColor.withOpacity(0.7)),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20, vertical: 10),
       decoration: BoxDecoration(
         color: widget.primaryColor,
         borderRadius: const BorderRadius.only(
@@ -560,23 +520,20 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.15),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: const Icon(Icons.description, color: Colors.white, size: 18),
+            child: const Icon(Icons.description, color: Colors.white, size: 16),
           ),
           const SizedBox(width: 10),
-          const Text(
-            'Formulario de Perforación no operativa',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+          Expanded(
+            child: Text(
+              isSmallScreen ? 'No Operativa' : 'Formulario de Perforación No Operativa',
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
-          const Spacer(),
           _buildEstadoBadge(),
         ],
       ),
@@ -585,29 +542,29 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
 
   Widget _buildEstadoBadge() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: isEditable ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: isEditable ? Colors.green : Colors.grey, width: 0.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 6,
-            height: 6,
+            width: 5,
+            height: 5,
             decoration: BoxDecoration(
               color: isEditable ? Colors.green : Colors.grey,
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Text(
             isEditable ? 'EDITABLE' : 'LECTURA',
             style: TextStyle(
               color: isEditable ? Colors.green : Colors.grey,
-              fontSize: 10,
+              fontSize: 8,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -616,74 +573,9 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
     );
   }
 
-  Widget _buildCompactDropdownField({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required Function(String?)? onChanged,
-    required IconData icon,
-  }) {
-    bool valueExists = value != null && items.contains(value);
-    bool isEnabled = onChanged != null && isEditable;
-    
-    return Container(
-      height: 42,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: valueExists ? value : null,
-          hint: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: widget.primaryColor),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  items.isEmpty ? 'Cargando...' : label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isEnabled ? Colors.grey.shade600 : Colors.grey.shade400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          isExpanded: true,
-          icon: Icon(Icons.arrow_drop_down, size: 18, color: widget.primaryColor),
-          style: const TextStyle(fontSize: 12, color: Colors.black87),
-          dropdownColor: Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          items: items.isEmpty
-              ? [
-                  DropdownMenuItem<String>(
-                    value: null,
-                    child: Text(
-                      'No hay opciones',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                    ),
-                  ),
-                ]
-              : items.map((String item) {
-                  return DropdownMenuItem<String>(
-                    value: item,
-                    child: Text(item, style: const TextStyle(fontSize: 12)),
-                  );
-                }).toList(),
-          onChanged: isEnabled ? onChanged : null,
-        ),
-      ),
-    );
-  }
-
   Widget _buildFooter() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: const BorderRadius.only(
@@ -698,12 +590,15 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
           TextButton(
             onPressed: () => Navigator.pop(context),
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               minimumSize: Size.zero,
             ),
             child: Text(
               'Cancelar',
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: isSmallScreen ? 11 : 12,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -713,18 +608,21 @@ class _DialogoFormularioNoPerforacionState extends State<DialogoFormularioNoOpeP
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.primaryColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 minimumSize: Size.zero,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.save, size: 14),
-                  SizedBox(width: 6),
-                  Text('Guardar', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  Icon(Icons.save, size: isSmallScreen ? 11 : 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Guardar',
+                    style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600),
+                  ),
                 ],
               ),
             ),

@@ -24,7 +24,7 @@ class ApiServiceExplosivo {
             .toList();
 
         // Eliminar datos antiguos antes de insertar nuevos
-        await _dbHelper.deleteAll('explosivos');
+        await _dbHelper.deleteAllShared('explosivos');
 
         // Guardar en la base de datos local
         await saveExplosivosToLocalDB(explosivos);
@@ -43,7 +43,7 @@ class ApiServiceExplosivo {
     for (var explosivo in explosivos) {
       Map<String, dynamic> explosivoData = explosivo.toMap();
       explosivoData.remove('id'); // Evitar conflictos con el ID
-      await _dbHelper.insert('explosivos', explosivoData);
+      await _dbHelper.insertShared('explosivos', explosivoData);
     }
   }
 }

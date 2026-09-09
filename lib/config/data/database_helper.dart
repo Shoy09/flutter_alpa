@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
-
+import 'package:bcrypt/bcrypt.dart';
 
 import 'package:crypt/crypt.dart';
 import 'package:i_miner/models/Empresa.dart';
+import 'package:i_miner/models/PdfModel.dart';
+import 'package:i_miner/models/TipoLabor.dart';
 import 'package:i_miner/models/guardia.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -25,9 +27,11 @@ class DatabaseHelper {
   factory DatabaseHelper() => _instance;
 
   static Database? _database;
+  static Database? _sharedDatabase;
   static String? _currentUserDni;
   static bool _isInitialized = false;
-  static const int _currentDbVersion = 28;
+  static const int _userDbVersion = 1;
+  static const int _sharedDbVersion = 1;
 
   DatabaseHelper._internal() {
     // Inicialización única para evitar múltiples llamadas
@@ -64,6 +68,13 @@ class DatabaseHelper {
     return _database!;
   }
 
+  Future<Database> get sharedDatabase async {
+    if (_sharedDatabase != null) return _sharedDatabase!;
+
+    _sharedDatabase = await _initSharedDatabase();
+    return _sharedDatabase!;
+  }
+
 
   /// Inicializa la base de datos
   Future<Database> _initDatabase() async {
@@ -84,11 +95,11 @@ class DatabaseHelper {
       }
 
       String path =
-          join(documentsDirectory.path, 'Seminco_db_catalina_huanca_${_currentUserDni!}.db');
+          join(documentsDirectory.path, 'Seminco_imi_db_catalina_huanca_${_currentUserDni!}.db');
 
       return await openDatabase(
         path,
-        version: _currentDbVersion,
+        version: _userDbVersion,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
         onConfigure: (db) async {
@@ -101,10 +112,40 @@ class DatabaseHelper {
     }
   }
 
+  Future<Database> _initSharedDatabase() async {
+    Directory documentsDirectory;
+
+    try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        documentsDirectory = await getApplicationDocumentsDirectory();
+      } else {
+        documentsDirectory = await getApplicationSupportDirectory();
+      }
+
+      if (!await documentsDirectory.exists()) {
+        await documentsDirectory.create(recursive: true);
+      }
+
+      final path = join(documentsDirectory.path, 'Seminco_db_imi_compartida.db');
+
+      return await openDatabase(
+        path,
+        version: _sharedDbVersion,
+        onCreate: _onCreateShared,
+        onUpgrade: _onUpgradeShared,
+        onConfigure: (db) async {
+          await db.execute('PRAGMA foreign_keys = ON');
+        },
+      );
+    } catch (e) {
+      print('Error al inicializar la base de datos compartida: $e');
+      rethrow;
+    }
+  }
+
   // Método de creación de tablas
   Future<void> _onCreate(Database db, int version) async {
 
-    //Tabla de usuarios
         await db.execute('''
   CREATE TABLE Usuario (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,8 +168,474 @@ class DatabaseHelper {
   )
 ''');
 
-// Tabla de planes mensuales
+    
+
+  // perforacion taladro largo
+  await db.execute('''
+CREATE TABLE Operacion_tal_largo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  seccion TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  modelo_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+// perforacion taladro horizoontal
+  await db.execute('''
+CREATE TABLE Operacion_tal_horizontal (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  seccion TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  modelo_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+// perforacion empernador
+  await db.execute('''
+CREATE TABLE Operacion_empernador (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  seccion TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  tipo_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+
+  await db.execute('''
+CREATE TABLE Operacion_carguio (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  seccion TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  capacidad TEXT,
+  tipo_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  programa_trabajo TEXT,
+  check_list TEXT,
+  check_list_telemando TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+  await db.execute('''
+CREATE TABLE Operacion_volquetes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  idNube INTEGER,
+  fecha TEXT,
+  turno TEXT,
+  guardia TEXT,
+  n_volquete TEXT,
+  operador TEXT,
+  empresa TEXT,
+  jefe_guardia TEXT,
+  registros TEXT,
+  horometros TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+
+  await db.execute('''
+CREATE TABLE Operacion_Dumper (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  seccion TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  capacidad TEXT,
+  tipo_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  programa_trabajo TEXT,
+  check_list TEXT,
+  check_list_telemando TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+
+  await db.execute('''
+CREATE TABLE Operacion_rompebanco(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+  await db.execute('''
+CREATE TABLE Operacion_Scalamin(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  guardia TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+
+  await db.execute('''
+CREATE TABLE Operacion_scissor(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+
+  await db.execute('''
+CREATE TABLE Operacion_anfochanger(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT,
+idNube INTEGER,
+Hora_envio TEXT,
+  turno TEXT,
+  operador TEXT,
+  jefe_guardia TEXT,
+  equipo TEXT,
+  n_equipo TEXT,
+  registros TEXT,
+  horometros TEXT,
+  condiciones_equipo TEXT,
+  check_list TEXT,
+  control_llantas TEXT,
+  estado TEXT DEFAULT 'activo',
+  envio INTEGER DEFAULT 0
+)
+''');
+
+//EXPLOSIVOS A MEJORAR------------------------------------------
+await db.execute('''
+  CREATE TABLE Datos_trabajo_exploraciones(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    turno TEXT,
+    taladro TEXT,
+    pies_por_taladro TEXT,
+    zona TEXT,
+    tipo_labor TEXT,
+    labor TEXT,
+    ala TEXT,
+    veta TEXT,
+    nivel TEXT,
+    tipo_perforacion TEXT,
+    estado TEXT DEFAULT 'Creado',
+    cerrado INTEGER DEFAULT 0,
+    envio INTEGER DEFAULT 0,
+    semanaDefault TEXT,
+    semanaSelect TEXT,
+    empresa TEXT,
+    seccion TEXT,
+    medicion INTEGER DEFAULT 0
+  )
+''');
+
     await db.execute('''
+  CREATE TABLE Despacho (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    datos_trabajo_id INTEGER,
+    mili_segundo REAL,
+    medio_segundo REAL,
+    observaciones TEXT,
+    cantidad_retardos INTEGER,
+    FOREIGN KEY(datos_trabajo_id) REFERENCES Datos_trabajo_exploraciones(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE DespachoDetalle (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    despacho_id INTEGER,
+    nombre_material TEXT NOT NULL,  
+    cantidad TEXT NOT NULL,
+    FOREIGN KEY(despacho_id) REFERENCES Despacho(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE Devoluciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    datos_trabajo_id INTEGER,
+    mili_segundo REAL, 
+    medio_segundo REAL,
+    observaciones TEXT,
+    cantidad_retardos INTEGER,
+    FOREIGN KEY(datos_trabajo_id) REFERENCES Datos_trabajo_exploraciones(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE DevolucionDetalle (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    devolucion_id INTEGER,
+    nombre_material TEXT NOT NULL,  
+    cantidad TEXT NOT NULL,         
+    FOREIGN KEY(devolucion_id) REFERENCES Devoluciones(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE DetalleDespachoExplosivos(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_despacho INTEGER,
+    numero INTEGER,
+    ms_cant1 TEXT,
+    lp_cant1 TEXT,
+    FOREIGN KEY (id_despacho) REFERENCES Despacho(id) ON DELETE CASCADE
+  )
+''');
+
+    await db.execute('''
+  CREATE TABLE DetalleDevolucionesExplosivos(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_devolucion INTEGER,
+    numero INTEGER,
+    ms_cant1 TEXT,
+    lp_cant1 TEXT,
+    FOREIGN KEY (id_devolucion) REFERENCES Devoluciones(id) ON DELETE CASCADE
+  )
+''');
+
+
+
+await db.execute('''
+  CREATE TABLE nube_Datos_trabajo_exploraciones(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    turno TEXT,
+    taladro TEXT,
+    pies_por_taladro TEXT,
+    zona TEXT,
+    tipo_labor TEXT,
+    labor TEXT,
+    ala TEXT,
+    veta TEXT,
+    nivel TEXT,
+    tipo_perforacion TEXT,
+    estado TEXT DEFAULT 'Creado',
+    cerrado INTEGER DEFAULT 0,
+    envio INTEGER DEFAULT 0,
+    semanaDefault TEXT,
+    semanaSelect TEXT,
+    empresa TEXT,
+    seccion TEXT,
+    idnube TEXT,
+    medicion INTEGER DEFAULT 0
+  )
+''');
+
+    await db.execute('''
+  CREATE TABLE nube_Despacho (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    datos_trabajo_id INTEGER,
+    mili_segundo REAL,
+    medio_segundo REAL,
+    observaciones TEXT,
+    FOREIGN KEY(datos_trabajo_id) REFERENCES nube_Datos_trabajo_exploraciones(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE nube_DespachoDetalle (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    despacho_id INTEGER,
+    nombre_material TEXT NOT NULL,  
+    cantidad TEXT NOT NULL,
+    FOREIGN KEY(despacho_id) REFERENCES nube_Despacho(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE nube_Devoluciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    datos_trabajo_id INTEGER,
+    mili_segundo REAL,
+    medio_segundo REAL,
+    observaciones TEXT,
+    FOREIGN KEY(datos_trabajo_id) REFERENCES nube_Datos_trabajo_exploraciones(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE nube_DevolucionDetalle (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    devolucion_id INTEGER,
+    nombre_material TEXT NOT NULL,  
+    cantidad TEXT NOT NULL,         
+    FOREIGN KEY(devolucion_id) REFERENCES nube_Devoluciones(id) ON DELETE CASCADE
+  );
+''');
+
+    await db.execute('''
+  CREATE TABLE nube_DetalleDespachoExplosivos(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_despacho INTEGER,
+    numero INTEGER,
+    ms_cant1 TEXT,
+    lp_cant1 TEXT,
+    FOREIGN KEY (id_despacho) REFERENCES nube_Despacho(id) ON DELETE CASCADE
+  )
+''');
+
+    await db.execute('''
+  CREATE TABLE nube_DetalleDevolucionesExplosivos(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_devolucion INTEGER,
+    numero INTEGER,
+    ms_cant1 TEXT,
+    lp_cant1 TEXT,
+    FOREIGN KEY (id_devolucion) REFERENCES nube_Devoluciones(id) ON DELETE CASCADE
+  )
+''');
+
+await db.execute('''
+  CREATE TABLE mediciones_horizontal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    turno TEXT,
+    empresa TEXT,
+    zona TEXT,
+    labor TEXT,
+    veta TEXT,
+    tipo_perforacion TEXT,
+    kg_explosivos REAL,
+    avance_programado REAL,
+    ancho REAL,
+    alto REAL,
+    envio INTEGER DEFAULT 0,
+    id_explosivo INTEGER,
+    idnube INTEGER
+  )
+''');
+
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS mediciones_largo (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fecha TEXT NOT NULL,
+      turno TEXT,
+      empresa TEXT,
+      zona TEXT,
+      labor TEXT,
+      veta TEXT,
+      tipo_perforacion TEXT,
+      kg_explosivos REAL,
+      toneladas REAL,
+      envio INTEGER DEFAULT 0,
+      id_explosivo INTEGER,
+      idnube INTEGER
+    )
+  ''');
+
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+
+
+  
+  }
+
+  Future<void> _onCreateShared(Database db, int version) async {
+    // Tabla de planes mensuales
+
+await db.execute('''
   CREATE TABLE PlanMensual(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     anio INTEGER,
@@ -334,6 +841,14 @@ CREATE TABLE longitud_barras (
 ''');
 
 await db.execute('''
+CREATE TABLE tipo_labor (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,
+  proceso TEXT
+)
+''');
+
+await db.execute('''
 CREATE TABLE pernos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tipo_perno TEXT NOT NULL,
@@ -369,328 +884,6 @@ CREATE TABLE horometros_nube (
 )
 ''');
 
-  // perforacion taladro largo
-  await db.execute('''
-CREATE TABLE Operacion_tal_largo (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  seccion TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  modelo_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-// perforacion taladro horizoontal
-  await db.execute('''
-CREATE TABLE Operacion_tal_horizontal (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  seccion TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  modelo_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-// perforacion empernador
-  await db.execute('''
-CREATE TABLE Operacion_empernador (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  seccion TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  tipo_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-
-  await db.execute('''
-CREATE TABLE Operacion_carguio (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  seccion TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  capacidad TEXT,
-  tipo_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  programa_trabajo TEXT,
-  check_list TEXT,
-  check_list_telemando TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-  await db.execute('''
-CREATE TABLE Operacion_volquetes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  idNube INTEGER,
-  fecha TEXT,
-  turno TEXT,
-  guardia TEXT,
-  n_volquete TEXT,
-  operador TEXT,
-  empresa TEXT,
-  jefe_guardia TEXT,
-  registros TEXT,
-  horometros TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-
-  await db.execute('''
-CREATE TABLE Operacion_Dumper (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  seccion TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  capacidad TEXT,
-  tipo_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  programa_trabajo TEXT,
-  check_list TEXT,
-  check_list_telemando TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-
-  await db.execute('''
-CREATE TABLE Operacion_rompebanco(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-  await db.execute('''
-CREATE TABLE Operacion_Scalamin(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-
-  await db.execute('''
-CREATE TABLE Operacion_scissor(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-
-  await db.execute('''
-CREATE TABLE Operacion_anfochanger(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fecha TEXT,
-idNube INTEGER,
-Hora_envio TEXT,
-  turno TEXT,
-  operador TEXT,
-  jefe_guardia TEXT,
-  equipo TEXT,
-  n_equipo TEXT,
-  registros TEXT,
-  horometros TEXT,
-  condiciones_equipo TEXT,
-  check_list TEXT,
-  control_llantas TEXT,
-  estado TEXT DEFAULT 'activo',
-  envio INTEGER DEFAULT 0
-)
-''');
-
-//EXPLOSIVOS A MEJORAR------------------------------------------
-await db.execute('''
-  CREATE TABLE Datos_trabajo_exploraciones(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha TEXT,
-    turno TEXT,
-    taladro TEXT,
-    pies_por_taladro TEXT,
-    zona TEXT,
-    tipo_labor TEXT,
-    labor TEXT,
-    ala TEXT,
-    veta TEXT,
-    nivel TEXT,
-    tipo_perforacion TEXT,
-    estado TEXT DEFAULT 'Creado',
-    cerrado INTEGER DEFAULT 0,
-    envio INTEGER DEFAULT 0,
-    semanaDefault TEXT,
-    semanaSelect TEXT,
-    empresa TEXT,
-    seccion TEXT,
-    medicion INTEGER DEFAULT 0
-  )
-''');
-
-    await db.execute('''
-  CREATE TABLE Despacho (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    datos_trabajo_id INTEGER,
-    mili_segundo REAL,
-    medio_segundo REAL,
-    observaciones TEXT,
-    cantidad_retardos INTEGER,
-    FOREIGN KEY(datos_trabajo_id) REFERENCES Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE DespachoDetalle (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    despacho_id INTEGER,
-    nombre_material TEXT NOT NULL,  
-    cantidad TEXT NOT NULL,
-    FOREIGN KEY(despacho_id) REFERENCES Despacho(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE Devoluciones (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    datos_trabajo_id INTEGER,
-    mili_segundo REAL, 
-    medio_segundo REAL,
-    observaciones TEXT,
-    cantidad_retardos INTEGER,
-    FOREIGN KEY(datos_trabajo_id) REFERENCES Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE DevolucionDetalle (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    devolucion_id INTEGER,
-    nombre_material TEXT NOT NULL,  
-    cantidad TEXT NOT NULL,         
-    FOREIGN KEY(devolucion_id) REFERENCES Devoluciones(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE DetalleDespachoExplosivos(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    id_despacho INTEGER,
-    numero INTEGER,
-    ms_cant1 TEXT,
-    lp_cant1 TEXT,
-    FOREIGN KEY (id_despacho) REFERENCES Despacho(id) ON DELETE CASCADE
-  )
-''');
-
-    await db.execute('''
-  CREATE TABLE DetalleDevolucionesExplosivos(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    id_devolucion INTEGER,
-    numero INTEGER,
-    ms_cant1 TEXT,
-    lp_cant1 TEXT,
-    FOREIGN KEY (id_devolucion) REFERENCES Devoluciones(id) ON DELETE CASCADE
-  )
-''');
 
 await db.execute('''
   CREATE TABLE accesorios (
@@ -741,135 +934,6 @@ await db.execute('''
 ''');
 
 await db.execute('''
-  CREATE TABLE nube_Datos_trabajo_exploraciones(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha TEXT,
-    turno TEXT,
-    taladro TEXT,
-    pies_por_taladro TEXT,
-    zona TEXT,
-    tipo_labor TEXT,
-    labor TEXT,
-    ala TEXT,
-    veta TEXT,
-    nivel TEXT,
-    tipo_perforacion TEXT,
-    estado TEXT DEFAULT 'Creado',
-    cerrado INTEGER DEFAULT 0,
-    envio INTEGER DEFAULT 0,
-    semanaDefault TEXT,
-    semanaSelect TEXT,
-    empresa TEXT,
-    seccion TEXT,
-    idnube TEXT,
-    medicion INTEGER DEFAULT 0
-  )
-''');
-
-    await db.execute('''
-  CREATE TABLE nube_Despacho (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    datos_trabajo_id INTEGER,
-    mili_segundo REAL,
-    medio_segundo REAL,
-    observaciones TEXT,
-    FOREIGN KEY(datos_trabajo_id) REFERENCES nube_Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE nube_DespachoDetalle (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    despacho_id INTEGER,
-    nombre_material TEXT NOT NULL,  
-    cantidad TEXT NOT NULL,
-    FOREIGN KEY(despacho_id) REFERENCES nube_Despacho(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE nube_Devoluciones (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    datos_trabajo_id INTEGER,
-    mili_segundo REAL,
-    medio_segundo REAL,
-    observaciones TEXT,
-    FOREIGN KEY(datos_trabajo_id) REFERENCES nube_Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE nube_DevolucionDetalle (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    devolucion_id INTEGER,
-    nombre_material TEXT NOT NULL,  
-    cantidad TEXT NOT NULL,         
-    FOREIGN KEY(devolucion_id) REFERENCES nube_Devoluciones(id) ON DELETE CASCADE
-  );
-''');
-
-    await db.execute('''
-  CREATE TABLE nube_DetalleDespachoExplosivos(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    id_despacho INTEGER,
-    numero INTEGER,
-    ms_cant1 TEXT,
-    lp_cant1 TEXT,
-    FOREIGN KEY (id_despacho) REFERENCES nube_Despacho(id) ON DELETE CASCADE
-  )
-''');
-
-    await db.execute('''
-  CREATE TABLE nube_DetalleDevolucionesExplosivos(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    id_devolucion INTEGER,
-    numero INTEGER,
-    ms_cant1 TEXT,
-    lp_cant1 TEXT,
-    FOREIGN KEY (id_devolucion) REFERENCES nube_Devoluciones(id) ON DELETE CASCADE
-  )
-''');
-
-await db.execute('''
-  CREATE TABLE mediciones_horizontal (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha TEXT NOT NULL,
-    turno TEXT,
-    empresa TEXT,
-    zona TEXT,
-    labor TEXT,
-    veta TEXT,
-    tipo_perforacion TEXT,
-    kg_explosivos REAL,
-    avance_programado REAL,
-    ancho REAL,
-    alto REAL,
-    envio INTEGER DEFAULT 0,
-    id_explosivo INTEGER,
-    idnube INTEGER
-  )
-''');
-
-  await db.execute('''
-    CREATE TABLE IF NOT EXISTS mediciones_largo (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT NOT NULL,
-      turno TEXT,
-      empresa TEXT,
-      zona TEXT,
-      labor TEXT,
-      veta TEXT,
-      tipo_perforacion TEXT,
-      kg_explosivos REAL,
-      toneladas REAL,
-      envio INTEGER DEFAULT 0,
-      id_explosivo INTEGER,
-      idnube INTEGER
-    )
-  ''');
-
-
-  await db.execute('''
 CREATE TABLE numero_retardos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   mes TEXT NOT NULL,
@@ -878,846 +942,77 @@ CREATE TABLE numero_retardos (
 )
 ''');
 
-  }
-
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-
-  if (oldVersion < 2) {
-
-    /// Tabla TipoPerforacion
-    if (!await _tablaExiste(db, 'TipoPerforacion')) {
-      await db.execute('''
-        CREATE TABLE TipoPerforacion (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nombre TEXT NOT NULL,
-          proceso TEXT NULL,
-          permitido_medicion INTEGER NOT NULL DEFAULT 0
-        )
-      ''');
-    }
-
-    /// Tabla Secciones
-    if (!await _tablaExiste(db, 'Secciones')) {
-      await db.execute('''
-        CREATE TABLE Secciones (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nombre TEXT NOT NULL,
-          proceso TEXT NULL
-        )
-      ''');
-    }
-    }
-
-  if (oldVersion < 3) {
-
-    if (!await _tablaExiste(db, 'Operacion_tal_horizontal')) {
-      await db.execute('''
-        CREATE TABLE Operacion_tal_horizontal (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          fecha TEXT,
-          turno TEXT,
-          seccion TEXT,
-          operador TEXT,
-          jefe_guardia TEXT,
-          n_equipo TEXT,
-          modelo_equipo TEXT,
-          registros TEXT,
-          horometros TEXT,
-          condiciones_equipo TEXT,
-          check_list TEXT,
-          control_llantas TEXT,
-          estado TEXT DEFAULT 'activo',
-          envio INTEGER DEFAULT 0
-        )
-      ''');
-
-      print("✅ Tabla Operacion_tal_horizontal creada en versión 3");
-    }
-
-  }
-  if (oldVersion < 4) {
-
-  // Operacion_tal_largo
-  if (!await _columnaExiste(db, 'Operacion_tal_largo', 'equipo')) {
-    await db.execute('ALTER TABLE Operacion_tal_largo ADD COLUMN equipo TEXT');
-    print("✅ Columna equipo agregada en Operacion_tal_largo");
-  }
-
-  // Operacion_tal_horizontal
-  if (!await _columnaExiste(db, 'Operacion_tal_horizontal', 'equipo')) {
-    await db.execute('ALTER TABLE Operacion_tal_horizontal ADD COLUMN equipo TEXT');
-    print("✅ Columna equipo agregada en Operacion_tal_horizontal");
-  }
-
-}if (oldVersion < 5) {
-
-  /// Crear tabla Operacion_empernador
-  if (!await _tablaExiste(db, 'Operacion_empernador')) {
-    await db.execute('''
-      CREATE TABLE Operacion_empernador (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT,
-        turno TEXT,
-        seccion TEXT,
-        operador TEXT,
-        jefe_guardia TEXT,
-        equipo TEXT,
-        n_equipo TEXT,
-        tipo_equipo TEXT,
-        registros TEXT,
-        horometros TEXT,
-        condiciones_equipo TEXT,
-        check_list TEXT,
-        control_llantas TEXT,
-        estado TEXT DEFAULT 'activo',
-        envio INTEGER DEFAULT 0
-      )
-    ''');
-
-    print("✅ Tabla Operacion_empernador creada en versión 5");
-  }
-
-  /// Migración segura de columna tipo en tabla Equipo
-  if (!await _columnaExiste(db, 'Equipo', 'tipo')) {
-    await db.execute(
-      'ALTER TABLE Equipo ADD COLUMN tipo TEXT'
-    );
-
-    print("✅ Columna tipo agregada en tabla Equipo");
-  }
-
-}if (oldVersion < 6) {
-
-  /// Tabla TipoEquipo
-  if (!await _tablaExiste(db, 'TipoEquipo')) {
-    await db.execute('''
-      CREATE TABLE TipoEquipo (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL
-      )
-    ''');
-
-    print("✅ Tabla TipoEquipo creada en versión 6");
-  }
-
-}if (oldVersion < 7) {
-
-  if (!await _tablaExiste(db, 'checklists_telemando')) {
-    await db.execute('''
-    CREATE TABLE checklists_telemando (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nombre TEXT NOT NULL
-    )
-    ''');
-  }
-
-  if (!await _tablaExiste(db, 'Operacion_carguio')) {
-    await db.execute('''
-    CREATE TABLE Operacion_carguio (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,
-      turno TEXT,
-      seccion TEXT,
-      operador TEXT,
-      jefe_guardia TEXT,
-      equipo TEXT,
-      n_equipo TEXT,
-      capacidad TEXT,
-      tipo_equipo TEXT,
-      registros TEXT,
-      horometros TEXT,
-      condiciones_equipo TEXT,
-      programa_trabajo TEXT,
-      check_list TEXT,
-      check_list_telemando TEXT,
-      control_llantas TEXT,
-      estado TEXT DEFAULT 'activo',
-      envio INTEGER DEFAULT 0
-    )
-    ''');
-  }
-
-}if (oldVersion < 8) {
-
-  if (!await _tablaExiste(db, 'Operacion_rompebanco')) {
-    await db.execute('''
-    CREATE TABLE Operacion_rompebanco(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,
-      turno TEXT,
-      operador TEXT,
-      jefe_guardia TEXT,
-      equipo TEXT,
-      n_equipo TEXT,
-      registros TEXT,
-      horometros TEXT,
-      condiciones_equipo TEXT,
-      check_list TEXT,
-      control_llantas TEXT,
-      estado TEXT DEFAULT 'activo',
-      envio INTEGER DEFAULT 0
-    )
-    ''');
-  }
-
-}if (oldVersion < 9) {
-
-    if (await _tablaExiste(db, 'Operacion_rompebanco')) {
-      await db.delete('Operacion_rompebanco');
-      // o también:
-      // await db.execute('DELETE FROM Operacion_rompebanco');
-    }
-
-  }if (oldVersion < 10) {
-
-  /// Tabla Operacion_scissor
-  if (!await _tablaExiste(db, 'Operacion_scissor')) {
-    await db.execute('''
-    CREATE TABLE Operacion_scissor(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,
-      turno TEXT,
-      operador TEXT,
-      jefe_guardia TEXT,
-      equipo TEXT,
-      n_equipo TEXT,
-      registros TEXT,
-      horometros TEXT,
-      condiciones_equipo TEXT,
-      check_list TEXT,
-      control_llantas TEXT,
-      estado TEXT DEFAULT 'activo',
-      envio INTEGER DEFAULT 0
-    )
-    ''');
-  }
-
-  /// Tabla Operacion_anfochanger
-  if (!await _tablaExiste(db, 'Operacion_anfochanger')) {
-    await db.execute('''
-    CREATE TABLE Operacion_anfochanger(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,
-      turno TEXT,
-      operador TEXT,
-      jefe_guardia TEXT,
-      equipo TEXT,
-      n_equipo TEXT,
-      registros TEXT,
-      horometros TEXT,
-      condiciones_equipo TEXT,
-      check_list TEXT,
-      control_llantas TEXT,
-      estado TEXT DEFAULT 'activo',
-      envio INTEGER DEFAULT 0
-    )
-    ''');
-  }
-
-}if (oldVersion < 11) {
-
-  /// Tabla Seccion
-  if (!await _tablaExiste(db, 'Seccion')) {
-    await db.execute('''
-    CREATE TABLE Seccion (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      proceso TEXT,
-      nombre TEXT
-    )
-    ''');
-  }
-
-}if (oldVersion < 12) {
-
-  /// Tabla Operacion_Dumper
-  if (!await _tablaExiste(db, 'Operacion_Dumper')) {
-    await db.execute('''
-    CREATE TABLE Operacion_Dumper (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,
-      turno TEXT,
-      seccion TEXT,
-      operador TEXT,
-      jefe_guardia TEXT,
-      equipo TEXT,
-      n_equipo TEXT,
-      capacidad TEXT,
-      tipo_equipo TEXT,
-      registros TEXT,
-      horometros TEXT,
-      condiciones_equipo TEXT,
-      programa_trabajo TEXT,
-      check_list TEXT,
-      check_list_telemando TEXT,
-      control_llantas TEXT,
-      estado TEXT DEFAULT 'activo',
-      envio INTEGER DEFAULT 0
-    )
-    ''');
-  }
-
-  /// Tabla Operacion_Scalamin
-  if (!await _tablaExiste(db, 'Operacion_Scalamin')) {
-    await db.execute('''
-    CREATE TABLE Operacion_Scalamin(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      fecha TEXT,
-      turno TEXT,
-      operador TEXT,
-      jefe_guardia TEXT,
-      equipo TEXT,
-      n_equipo TEXT,
-      registros TEXT,
-      horometros TEXT,
-      condiciones_equipo TEXT,
-      check_list TEXT,
-      control_llantas TEXT,
-      estado TEXT DEFAULT 'activo',
-      envio INTEGER DEFAULT 0
-    )
-    ''');
-  }
-
-}if (oldVersion < 13) {
-
-  /// Tabla longitud_barras
-  if (!await _tablaExiste(db, 'longitud_barras')) {
-    await db.execute('''
-    CREATE TABLE longitud_barras (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      proceso TEXT NOT NULL,
-      longitud_pies REAL NOT NULL
-    )
-    ''');
-  }
-
-  /// Tabla pernos
-  if (!await _tablaExiste(db, 'pernos')) {
-    await db.execute('''
-    CREATE TABLE pernos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tipo_perno TEXT NOT NULL,
-      longitud REAL NOT NULL
-    )
-    ''');
-  }
-
-  /// Tabla mallas
-  if (!await _tablaExiste(db, 'mallas')) {
-    await db.execute('''
-    CREATE TABLE mallas (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tipo_malla TEXT NOT NULL
-    )
-    ''');
-  }
-
-}if (oldVersion < 14) {
-
-  /// Tabla horometros_nube
-  if (!await _tablaExiste(db, 'horometros_nube')) {
-    await db.execute('''
-    CREATE TABLE horometros_nube (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      operacion TEXT NOT NULL,
-      tipo_horometro TEXT NOT NULL, 
-      inicio REAL,
-      final REAL,
-      op INTEGER,
-      inop INTEGER
-    )
-    ''');
-  }
-
-}if (oldVersion < 15) {
-
-  if (!await _tablaExiste(db, 'origen_destino')) {
-    await db.execute('''
-    CREATE TABLE origen_destino (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      proceso TEXT,
-      tipo TEXT,
-      nombre TEXT
-    )
-    ''');
-  }
-
-}
-if (oldVersion < 16) {
-
-  // 🔹 Tabla principal
-  if (!await _tablaExiste(db, 'Datos_trabajo_exploraciones')) {
-    await db.execute('''
-      CREATE TABLE Datos_trabajo_exploraciones(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT,
-        turno TEXT,
-        taladro TEXT,
-        pies_por_taladro TEXT,
-        zona TEXT,
-        tipo_labor TEXT,
-        labor TEXT,
-        ala TEXT,
-        veta TEXT,
-        nivel TEXT,
-        tipo_perforacion TEXT,
-        estado TEXT DEFAULT 'Creado',
-        cerrado INTEGER DEFAULT 0,
-        envio INTEGER DEFAULT 0,
-        semanaDefault TEXT,
-        semanaSelect TEXT,
-        empresa TEXT,
-        seccion TEXT,
-        medicion INTEGER DEFAULT 0
-      )
-    ''');
-  }
-
-  // 🔹 Despacho
-  if (!await _tablaExiste(db, 'Despacho')) {
-    await db.execute('''
-      CREATE TABLE Despacho (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        datos_trabajo_id INTEGER,
-        mili_segundo REAL,
-        medio_segundo REAL,
-        observaciones TEXT,
-        FOREIGN KEY(datos_trabajo_id) REFERENCES Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 DespachoDetalle
-  if (!await _tablaExiste(db, 'DespachoDetalle')) {
-    await db.execute('''
-      CREATE TABLE DespachoDetalle (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        despacho_id INTEGER,
-        nombre_material TEXT NOT NULL,  
-        cantidad TEXT NOT NULL,
-        FOREIGN KEY(despacho_id) REFERENCES Despacho(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 Devoluciones
-  if (!await _tablaExiste(db, 'Devoluciones')) {
-    await db.execute('''
-      CREATE TABLE Devoluciones (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        datos_trabajo_id INTEGER,
-        mili_segundo REAL,
-        medio_segundo REAL,
-        observaciones TEXT,
-        FOREIGN KEY(datos_trabajo_id) REFERENCES Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 DevolucionDetalle
-  if (!await _tablaExiste(db, 'DevolucionDetalle')) {
-    await db.execute('''
-      CREATE TABLE DevolucionDetalle (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        devolucion_id INTEGER,
-        nombre_material TEXT NOT NULL,  
-        cantidad TEXT NOT NULL,         
-        FOREIGN KEY(devolucion_id) REFERENCES Devoluciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 Explosivos despacho
-  if (!await _tablaExiste(db, 'DetalleDespachoExplosivos')) {
-    await db.execute('''
-      CREATE TABLE DetalleDespachoExplosivos(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_despacho INTEGER,
-        numero INTEGER,
-        ms_cant1 TEXT,
-        lp_cant1 TEXT,
-        FOREIGN KEY (id_despacho) REFERENCES Despacho(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 Explosivos devoluciones
-  if (!await _tablaExiste(db, 'DetalleDevolucionesExplosivos')) {
-    await db.execute('''
-      CREATE TABLE DetalleDevolucionesExplosivos(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_devolucion INTEGER,
-        numero INTEGER,
-        ms_cant1 TEXT,
-        lp_cant1 TEXT,
-        FOREIGN KEY (id_devolucion) REFERENCES Devoluciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-  // 🔹 NUEVAS TABLAS =======================
-
-  // Accesorios
-  if (!await _tablaExiste(db, 'accesorios')) {
-    await db.execute('''
-      CREATE TABLE accesorios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tipo_accesorio TEXT NOT NULL,
-        costo REAL NOT NULL,
-        unidad_medida TEXT NOT NULL
-      )
-    ''');
-  }
-
-  // Explosivos
-  if (!await _tablaExiste(db, 'explosivos')) {
-    await db.execute('''
-      CREATE TABLE explosivos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tipo_explosivo TEXT NOT NULL,
-        cantidad_por_caja INTEGER NOT NULL,
-        peso_unitario REAL NOT NULL,
-        costo_por_kg REAL NOT NULL,
-        unidad_medida TEXT NOT NULL
-      )
-    ''');
-  }
-
-  // ExplosivosUni
-  if (!await _tablaExiste(db, 'ExplosivosUni')) {
-    await db.execute('''
-      CREATE TABLE ExplosivosUni (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dato REAL NOT NULL,
-        tipo TEXT NOT NULL
-      )
-    ''');
-  }
-
-
-}if (oldVersion < 17) {
-
-  // 🔹 TONELADAS
-  if (!await _tablaExiste(db, 'toneladas')) {
-    await db.execute('''
-      CREATE TABLE toneladas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT NOT NULL,
-        turno TEXT,
-        zona TEXT NOT NULL,
-        tipo TEXT NOT NULL,
-        labor TEXT NOT NULL,
-        toneladas REAL NOT NULL
-      )
-    ''');
-  }
-
-  // 🔹 NUBE DATOS TRABAJO (nueva versión con idnube)
-  if (!await _tablaExiste(db, 'nube_Datos_trabajo_exploraciones')) {
-    await db.execute('''
-      CREATE TABLE nube_Datos_trabajo_exploraciones(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT,
-        turno TEXT,
-        taladro TEXT,
-        pies_por_taladro TEXT,
-        zona TEXT,
-        tipo_labor TEXT,
-        labor TEXT,
-        ala TEXT,
-        veta TEXT,
-        nivel TEXT,
-        tipo_perforacion TEXT,
-        estado TEXT DEFAULT 'Creado',
-        cerrado INTEGER DEFAULT 0,
-        envio INTEGER DEFAULT 0,
-        semanaDefault TEXT,
-        semanaSelect TEXT,
-        empresa TEXT,
-        seccion TEXT,
-        idnube TEXT,
-        medicion INTEGER DEFAULT 0
-      )
-    ''');
-  }
-
-  // 🔹 NUBE DESPACHO
-  if (!await _tablaExiste(db, 'nube_Despacho')) {
-    await db.execute('''
-      CREATE TABLE nube_Despacho (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        datos_trabajo_id INTEGER,
-        mili_segundo REAL,
-        medio_segundo REAL,
-        observaciones TEXT,
-        FOREIGN KEY(datos_trabajo_id) REFERENCES nube_Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 NUBE DESPACHO DETALLE
-  if (!await _tablaExiste(db, 'nube_DespachoDetalle')) {
-    await db.execute('''
-      CREATE TABLE nube_DespachoDetalle (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        despacho_id INTEGER,
-        nombre_material TEXT NOT NULL,
-        cantidad TEXT NOT NULL,
-        FOREIGN KEY(despacho_id) REFERENCES nube_Despacho(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 NUBE DEVOLUCIONES
-  if (!await _tablaExiste(db, 'nube_Devoluciones')) {
-    await db.execute('''
-      CREATE TABLE nube_Devoluciones (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        datos_trabajo_id INTEGER,
-        mili_segundo REAL,
-        medio_segundo REAL,
-        observaciones TEXT,
-        FOREIGN KEY(datos_trabajo_id) REFERENCES nube_Datos_trabajo_exploraciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 NUBE DEVOLUCION DETALLE
-  if (!await _tablaExiste(db, 'nube_DevolucionDetalle')) {
-    await db.execute('''
-      CREATE TABLE nube_DevolucionDetalle (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        devolucion_id INTEGER,
-        nombre_material TEXT NOT NULL,
-        cantidad TEXT NOT NULL,
-        FOREIGN KEY(devolucion_id) REFERENCES nube_Devoluciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 DETALLE DESPACHO EXPLOSIVOS
-  if (!await _tablaExiste(db, 'nube_DetalleDespachoExplosivos')) {
-    await db.execute('''
-      CREATE TABLE nube_DetalleDespachoExplosivos(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_despacho INTEGER,
-        numero INTEGER,
-        ms_cant1 TEXT,
-        lp_cant1 TEXT,
-        FOREIGN KEY (id_despacho) REFERENCES nube_Despacho(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 DETALLE DEVOLUCIONES EXPLOSIVOS
-  if (!await _tablaExiste(db, 'nube_DetalleDevolucionesExplosivos')) {
-    await db.execute('''
-      CREATE TABLE nube_DetalleDevolucionesExplosivos(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_devolucion INTEGER,
-        numero INTEGER,
-        ms_cant1 TEXT,
-        lp_cant1 TEXT,
-        FOREIGN KEY (id_devolucion) REFERENCES nube_Devoluciones(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // 🔹 MEDICIONES HORIZONTAL
-  if (!await _tablaExiste(db, 'mediciones_horizontal')) {
-    await db.execute('''
-      CREATE TABLE mediciones_horizontal (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT NOT NULL,
-        turno TEXT,
-        empresa TEXT,
-        zona TEXT,
-        labor TEXT,
-        veta TEXT,
-        tipo_perforacion TEXT,
-        kg_explosivos REAL,
-        avance_programado REAL,
-        ancho REAL,
-        alto REAL,
-        envio INTEGER DEFAULT 0,
-        id_explosivo INTEGER,
-        idnube INTEGER
-      )
-    ''');
-  }
-
-  // 🔹 MEDICIONES LARGO
-  if (!await _tablaExiste(db, 'mediciones_largo')) {
-    await db.execute('''
-      CREATE TABLE mediciones_largo (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT NOT NULL,
-        turno TEXT,
-        empresa TEXT,
-        zona TEXT,
-        labor TEXT,
-        veta TEXT,
-        tipo_perforacion TEXT,
-        kg_explosivos REAL,
-        toneladas REAL,
-        envio INTEGER DEFAULT 0,
-        id_explosivo INTEGER,
-        idnube INTEGER
-      )
-    ''');
-  }
-
-}if (oldVersion < 19) {
-
-  // 🔹 AGREGAR cantidad_retardos EN Despacho
-  if (!await _columnaExiste(db, 'Despacho', 'cantidad_retardos')) {
-    await db.execute('''
-      ALTER TABLE Despacho ADD COLUMN cantidad_retardos INTEGER DEFAULT 0
-    ''');
-  }
-
-  // 🔹 AGREGAR cantidad_retardos EN Devoluciones
-  if (!await _columnaExiste(db, 'Devoluciones', 'cantidad_retardos')) {
-    await db.execute('''
-      ALTER TABLE Devoluciones ADD COLUMN cantidad_retardos INTEGER DEFAULT 0
-    ''');
-  }
-
-}if (oldVersion < 20) {
-
-  // 🔹 CREAR TABLA Guardia
-  if (!await _tablaExiste(db, 'Guardia')) {
-    await db.execute('''
-      CREATE TABLE Guardia (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        guardia TEXT NOT NULL
-      )
-    ''');
-  }
-
-}if (oldVersion < 21) {
-
-  // 🔹 AGREGAR idNube A TODAS LAS TABLAS
-
-  final tablas = [
-    'Operacion_tal_largo',
-    'Operacion_tal_horizontal',
-    'Operacion_empernador',
-    'Operacion_carguio',
-    'Operacion_Dumper',
-    'Operacion_rompebanco',
-    'Operacion_Scalamin',
-    'Operacion_scissor',
-    'Operacion_anfochanger',
-  ];
-
-  for (final tabla in tablas) {
-    if (!await _columnaExiste(db, tabla, 'idNube')) {
-      await db.execute('''
-        ALTER TABLE $tabla ADD COLUMN idNube INTEGER DEFAULT 0
-      ''');
-    }
-  }
-  }if (oldVersion < 23) {
-
-  // 🔹 CREAR TABLA materiales
-  if (!await _tablaExiste(db, 'materiales')) {
-    await db.execute('''
-      CREATE TABLE materiales (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL
-      )
-    ''');
-  }
-
-}if (oldVersion < 24) {
-
-  // 🔹 CREAR TABLA Operacion_volquetes
-  if (!await _tablaExiste(db, 'Operacion_volquetes')) {
-    await db.execute('''
-      CREATE TABLE Operacion_volquetes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        idNube INTEGER,
-        fecha TEXT,
-        turno TEXT,
-        guardia TEXT,
-        n_volquete TEXT,
-        operador TEXT,
-        empresa TEXT,
-        jefe_guardia TEXT,
-        registros TEXT,
-        horometros TEXT,
-        estado TEXT DEFAULT 'activo',
-        envio INTEGER DEFAULT 0
-      )
-    ''');
-  }
-
-}if (oldVersion < 25) {
-
-  // 🔹 CREAR TABLA Empresa
-  if (!await _tablaExiste(db, 'Empresa')) {
-    await db.execute('''
-      CREATE TABLE Empresa (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT
-      )
-    ''');
-  }
-
-}if (oldVersion < 26) {
-
-  // 🔹 RECREAR TABLA materiales
-  if (await _tablaExiste(db, 'materiales')) {
-    await db.execute('DROP TABLE materiales');
-  }
+await db.execute('''
+  CREATE TABLE IF NOT EXISTS CarpetaModel (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  )
+''');
+
+await db.execute('''
+  CREATE TABLE IF NOT EXISTS PdfModel (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    url_pdf TEXT NOT NULL,
+    carpeta_id INTEGER NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    FOREIGN KEY (carpeta_id) REFERENCES CarpetaModel(id) ON DELETE CASCADE
+  )
+''');
+
+
+await db.execute('''
+  CREATE TABLE IF NOT EXISTS UsuariosModel (
+    id INTEGER PRIMARY KEY,
+    usuario_id INTEGER NOT NULL,
+    nombres TEXT NOT NULL,
+    apellidos TEXT NOT NULL,
+    nombre_completo TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  )
+''');
 
   await db.execute('''
-    CREATE TABLE materiales (
+    CREATE TABLE UsuariosMaestros (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      proceso TEXT NOT NULL,
-      nombre TEXT NOT NULL
+      codigo_dni TEXT NOT NULL UNIQUE,
+      apellidos TEXT NOT NULL,
+      nombres TEXT NOT NULL,
+      cargo TEXT,
+      empresa TEXT,
+      guardia TEXT,
+      autorizado_equipo TEXT,
+      area TEXT,
+      clasificacion TEXT,
+      correo TEXT,
+      password TEXT NOT NULL,
+      firma TEXT,
+      rol TEXT,
+      operaciones_autorizadas TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
     )
   ''');
-}if (oldVersion < 27) {
 
-  // 🔹 RECREAR TABLA materiales
-  if (await _tablaExiste(db, 'materiales')) {
-    await db.execute('DROP TABLE materiales');
-  }
-
+  // Índice para búsquedas rápidas
   await db.execute('''
-    CREATE TABLE materiales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      proceso TEXT NOT NULL,
-      nombre TEXT NOT NULL
-    )
+    CREATE INDEX idx_usuarios_dni ON UsuariosMaestros(codigo_dni)
   ''');
-}if (oldVersion < 28) {
-  // 🔹 AGREGAR Hora_envio A TODAS LAS TABLAS
 
-  final tablas = [
-    'Operacion_tal_largo',
-    'Operacion_tal_horizontal',
-    'Operacion_empernador',
-    'Operacion_carguio',
-    'Operacion_Dumper',
-    'Operacion_rompebanco',
-    'Operacion_Scalamin',
-    'Operacion_scissor',
-    'Operacion_anfochanger',
-    'Operacion_volquetes'
-  ];
+  }
 
-  for (final tabla in tablas) {
-    if (!await _columnaExiste(db, tabla, 'Hora_envio')) {
-      await db.execute('''
-        ALTER TABLE $tabla ADD COLUMN Hora_envio TEXT
-      ''');
-    }
+  Future<void> _onUpgradeShared(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    
   }
-}
-  
-  }
+
   
 Future<bool> _tablaExiste(Database db, String tableName) async {
   final result = await db.rawQuery(
@@ -1762,13 +1057,55 @@ Future<bool> _tablaExiste(Database db, String tableName) async {
     return await db.update(table, data, where: 'id = ?', whereArgs: [id]);
   }
 
-//USUARIOS
-// **Guardar Usuario en SQLite**
-  Future<void> saveUser(Map<String, dynamic> userData, String password) async {
-    final db = await database;
-    final hashedPassword =
-        Crypt.sha256(password).toString(); // Encriptar la contraseña
+// ============ NUEVOS MÉTODOS PARA BASE DE DATOS COMPARTIDA ============
 
+/// Obtener todos los registros de cualquier tabla (Compartida)
+Future<List<Map<String, dynamic>>> getAllShared(String table) async {
+  final db = await sharedDatabase;
+  return await db.query(table);
+}
+
+/// Insertar datos en cualquier tabla (Compartida)
+Future<int> insertShared(String table, Map<String, dynamic> data) async {
+  final db = await sharedDatabase;
+  return await db.insert(table, data);
+}
+
+/// Eliminar un registro de cualquier tabla (Compartida)
+Future<int> deleteShared(String table, int id) async {
+  final db = await sharedDatabase;
+  return await db.delete(table, where: 'id = ?', whereArgs: [id]);
+}
+
+/// Eliminar todos los registros de una tabla (Compartida)
+Future<int> deleteAllShared(String table) async {
+  final db = await sharedDatabase;
+  return await db.delete(table);
+}
+
+/// Actualizar un registro en cualquier tabla (Compartida)
+Future<int> updateShared(String table, Map<String, dynamic> data, int id) async {
+  final db = await sharedDatabase;
+  return await db.update(table, data, where: 'id = ?', whereArgs: [id]);
+}
+
+// En DatabaseHelper
+Future<void> replaceAllShared(String table, List<Map<String, dynamic>> rows) async {
+  final db = await sharedDatabase;
+  await db.transaction((txn) async {
+    await txn.delete(table);
+    for (var row in rows) {
+      await txn.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  });
+}
+
+Future<void> saveUser(Map<String, dynamic> userData, String password) async {
+    final db = await database;
+    
+    // 🔐 Usar bcrypt para hashear la contraseña (compatible con backend)
+    final hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
+    
     await db.insert(
       'Usuario',
       {
@@ -1779,28 +1116,25 @@ Future<bool> _tablaExiste(Database db, String tableName) async {
         'empresa': userData['empresa'],
         'guardia': userData['guardia'],
         'autorizado_equipo': userData['autorizado_equipo'],
-        'area': userData['area'], // Nuevo campo
+        'area': userData['area'],
         'clasificacion': userData['clasificacion'],
         'correo': userData['correo'],
-        'password': hashedPassword,
+        'password': hashedPassword, // ✅ Guardado con bcrypt
         'firma': userData['firma'] ?? '',
         'rol': userData['rol']?.toString() ?? '',
-        'createdAt': userData['createdAt'] ??
-            DateTime.now().toIso8601String(), // Fecha de creación
-        'updatedAt': userData['updatedAt'] ??
-            DateTime.now().toIso8601String(), // Fecha de actualización
-
-        'operaciones_autorizadas':
-            jsonEncode(userData['operaciones_autorizadas'] ?? {}),
+        'createdAt': userData['createdAt'] ?? DateTime.now().toIso8601String(),
+        'updatedAt': userData['updatedAt'] ?? DateTime.now().toIso8601String(),
+        'operaciones_autorizadas': jsonEncode(userData['operaciones_autorizadas'] ?? {}),
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-  }
+}
 
-  //Login cuando no hay conexion
-  Future<bool> loginOffline(String dni, String password) async {
-    final db = await DatabaseHelper().database;
-    final List<Map<String, dynamic>> result = await db.query(
+ Future<bool> loginOffline(String dni, String password) async {
+  // 1️⃣ PRIMERO: Buscar en la base de datos personal del usuario
+  try {
+    final userDb = await DatabaseHelper().database;
+    final List<Map<String, dynamic>> result = await userDb.query(
       'Usuario',
       where: 'codigo_dni = ?',
       whereArgs: [dni],
@@ -1808,11 +1142,97 @@ Future<bool> _tablaExiste(Database db, String tableName) async {
 
     if (result.isNotEmpty) {
       final storedPassword = result.first['password'];
-      return Crypt(storedPassword).match(password); // <- Usa `.match()`
+      // ✅ Usar BCrypt para comparar (compatible con backend)
+      return BCrypt.checkpw(password, storedPassword);
+    }
+  } catch (e) {
+    print('Error al buscar en DB personal: $e');
+  }
+
+  // 2️⃣ SEGUNDO: Buscar en la base de datos compartida (maestra)
+  try {
+    final sharedDb = await DatabaseHelper().sharedDatabase;
+    
+    final tables = await sharedDb.query('sqlite_master', 
+      where: 'type = ? AND name = ?', 
+      whereArgs: ['table', 'UsuariosMaestros']
+    );
+    
+    if (tables.isEmpty) {
+      print('⚠️ Tabla UsuariosMaestros no existe');
+      return false;
     }
 
-    return false;
+    final List<Map<String, dynamic>> sharedResult = await sharedDb.query(
+      'UsuariosMaestros',
+      where: 'codigo_dni = ?',
+      whereArgs: [dni],
+    );
+
+    if (sharedResult.isNotEmpty) {
+      final storedPassword = sharedResult.first['password'];
+      
+      // ✅ Usar BCrypt para comparar
+      if (BCrypt.checkpw(password, storedPassword)) {
+        print('✅ Usuario autenticado desde DB maestra');
+        await _createUserDatabaseFromShared(dni, sharedResult.first);
+        return true;
+      }
+    }
+  } catch (e) {
+    print('Error al buscar en DB compartida: $e');
   }
+
+  return false;
+}
+
+Future<void> _createUserDatabaseFromShared(String dni, Map<String, dynamic> userData) async {
+  try {
+    await DatabaseHelper().setCurrentUserDni(dni);
+    final userDb = await DatabaseHelper().database;
+    
+    final existingUser = await userDb.query(
+      'Usuario',
+      where: 'codigo_dni = ?',
+      whereArgs: [dni],
+    );
+    
+    if (existingUser.isNotEmpty) {
+      print('✅ Usuario ya existe en DB personal');
+      return;
+    }
+    
+    // 📝 La contraseña ya viene hasheada con bcrypt desde el backend
+    await userDb.insert(
+      'Usuario',
+      {
+        'codigo_dni': userData['codigo_dni'],
+        'apellidos': userData['apellidos'] ?? '',
+        'nombres': userData['nombres'] ?? '',
+        'cargo': userData['cargo'] ?? '',
+        'empresa': userData['empresa'] ?? '',
+        'guardia': userData['guardia'] ?? '',
+        'autorizado_equipo': userData['autorizado_equipo'] ?? '',
+        'area': userData['area'] ?? '',
+        'clasificacion': userData['clasificacion'] ?? '',
+        'correo': userData['correo'] ?? '',
+        'password': userData['password'], // ✅ Ya está hasheada con bcrypt
+        'firma': userData['firma'] ?? '',
+        'rol': userData['rol']?.toString() ?? '',
+        'operaciones_autorizadas': userData['operaciones_autorizadas'] ?? '{}',
+        'createdAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    
+    print('✅ Base de datos personal creada para usuario: $dni');
+    
+  } catch (e) {
+    print('❌ Error al crear DB personal: $e');
+    rethrow;
+  }
+}
 
   Future<Map<String, dynamic>?> getUserByDni(String dni) async {
     final db = await database;
@@ -1823,14 +1243,14 @@ Future<bool> _tablaExiste(Database db, String tableName) async {
     );
 
     if (result.isNotEmpty) {
-      return result.first; // Devuelve el primer usuario encontrado
+      return result.first; 
     }
-    return null; // Devuelve null si no hay usuario con ese DNI
+    return null; 
   }
 
   //ESTADOS
     Future<List<Map<String, dynamic>>> getEstadosBD(String proceso) async {
-    final db = await database; // Obtiene la instancia de la base de datos
+    final db = await sharedDatabase;
     return await db.query(
       'EstadostBD',
       where: 'proceso = ?',
@@ -1839,7 +1259,7 @@ Future<bool> _tablaExiste(Database db, String tableName) async {
   }
 
   Future<List<Map<String, dynamic>>> getOrigenDestino(String proceso, String tipo) async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   return await db.query(
     'origen_destino',
@@ -1850,7 +1270,7 @@ Future<bool> _tablaExiste(Database db, String tableName) async {
 
 //CHECKLIST
 Future<List<Map<String, dynamic>>> getCheckListByProceso(String proceso) async {
-  final db = await database;
+  final db = await sharedDatabase;
   final result = await db.query(
     'checklist_items',
     where: 'proceso = ?',
@@ -1860,13 +1280,13 @@ Future<List<Map<String, dynamic>>> getCheckListByProceso(String proceso) async {
 }
 
 Future<List<Map<String, dynamic>>> getChecklistTelemando() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final result = await db.query('checklists_telemando');
   return result;
 }
 
 Future<List<TipoEquipo>> getTiposEquipo() async {
-  final db = await database; // Obtenemos la instancia de la DB
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> maps = await db.query('TipoEquipo');
 
   return List.generate(
@@ -1876,7 +1296,7 @@ Future<List<TipoEquipo>> getTiposEquipo() async {
 }
 
 Future<List<Empresa>> getEmpresas() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> maps = await db.query('Empresa');
 
   return List.generate(
@@ -1888,7 +1308,7 @@ Future<List<Empresa>> getEmpresas() async {
 //PARA TODOS LAS OPERACIONES------------------------------------------------------------
 
 Future<List<String>> getJefesGuardiaNombres() async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   try {
     final result = await db.query(
@@ -1912,13 +1332,13 @@ Future<List<String>> getJefesGuardiaNombres() async {
 
 
 Future<List<Equipo>> getEquipos() async {
-    final db = await database;
+  final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db.query('Equipo');
     return List.generate(maps.length, (i) => Equipo.fromJson(maps[i]));
   }
 
   Future<List<Seccion>> getSeccionesByProceso(String proceso) async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   final List<Map<String, dynamic>> maps = await db.query(
     'Seccion',
@@ -1930,7 +1350,7 @@ Future<List<Equipo>> getEquipos() async {
 }
 
 Future<List<Guardia>> getGuardias() async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   final List<Map<String, dynamic>> maps = await db.query('Guardia');
 
@@ -1941,7 +1361,7 @@ Future<List<Guardia>> getGuardias() async {
 }
 
 Future<List<TipoPerforacion>> getTiposPerforacionByProceso(String proceso) async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   final List<Map<String, dynamic>> maps = await db.query(
     'TipoPerforacion',
@@ -1952,14 +1372,26 @@ Future<List<TipoPerforacion>> getTiposPerforacionByProceso(String proceso) async
   return List.generate(maps.length, (i) => TipoPerforacion.fromJson(maps[i]));
 }
 
+Future<List<TipoLabor>> getTiposLaborByProceso(String proceso) async {
+  final db = await sharedDatabase;
+
+  final List<Map<String, dynamic>> maps = await db.query(
+    'tipo_labor',
+    where: 'proceso = ?',
+    whereArgs: [proceso],
+  );
+
+  return List.generate(maps.length, (i) => TipoLabor.fromJson(maps[i]));
+}
+
 Future<List<PlanMensual>> getPlanesMensual() async {
-    final db = await database;
+  final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db.query('PlanMensual');
     return List.generate(maps.length, (i) => PlanMensual.fromJson(maps[i]));
   }
 
   Future<List<PlanProduccion>> getPlanesProduccion() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> maps =
       await db.query('PlanProduccion');
 
@@ -1970,7 +1402,7 @@ Future<List<PlanMensual>> getPlanesMensual() async {
 }
 
 Future<List<PlanMetraje>> getPlanesMetraje() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> maps =
       await db.query('PlanMetraje');
 
@@ -1981,7 +1413,7 @@ Future<List<PlanMetraje>> getPlanesMetraje() async {
 }
 
   Future<List<Map<String, dynamic>>> getLongitudBarrasPorProceso(String proceso) async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   return await db.query(
     'longitud_barras',
@@ -1991,19 +1423,19 @@ Future<List<PlanMetraje>> getPlanesMetraje() async {
 }
 
 Future<List<Map<String, dynamic>>> getPernos() async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   return await db.query('pernos');
 }
 
 Future<List<Map<String, dynamic>>> getMallas() async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   return await db.query('mallas');
 }
 
 Future<List<Map<String, dynamic>>> getHorometrosPorOperacion(String operacion) async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   final result = await db.query(
     'horometros_nube',
@@ -2228,7 +1660,7 @@ Future<Map<String, dynamic>?> createEstado(
     barras = [
       {
         'n_fila': 0,
-         'n_taladro': 0,
+         'n_taladro': 1,
         'longitud_perforacion': 0.0,
          'n_barras': 0,
         'tipo_perforacion': operacion?['tipo_perforacion'] ?? '',
@@ -3779,7 +3211,6 @@ Future<int> insertOperacionEmpernador(
     'diesel': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
     'electrico': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
     'percusion': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
-    'empernador': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
   };
 
   // 🔥 aplicar valores de nube
@@ -8269,7 +7700,8 @@ Future<int> insertOperacionScalamin(
   String operador,
   String jefeGuardia,
   String equipo,
-  String nEquipo, {
+  String nEquipo,
+  String guardia, {
   List<Map<String, dynamic>>? checkListJson,
   List<Map<String, dynamic>>? horometrosBase, // 🔥 NUEVO
 }) async {
@@ -8328,6 +7760,7 @@ Future<int> insertOperacionScalamin(
       'jefe_guardia': jefeGuardia,
       'equipo': equipo,
       'n_equipo': nEquipo,
+      'guardia': guardia,
       'horometros': jsonEncode(horometrosJson),
       'condiciones_equipo': jsonEncode(condicionesEquipoJson),
       'check_list': checkListStr,
@@ -8490,6 +7923,9 @@ Future<Map<String, dynamic>?> createEstadoScalamin(
     'labor': operacion?['labor'] ?? '',
     'ala': operacion?['ala'] ?? '',
     'observaciones': operacion?['observaciones'] ?? '',
+    'metros_lineales': operacion?['metros_lineales'] ?? 0.0,  // Decimal, opcional
+    'area_m2': operacion?['area_m2'] ?? 0.0,                  // Decimal, opcional
+    'tipo_labor_texto': operacion?['tipo_labor_texto'] ?? '',
   };
 
   Map<String, dynamic> nuevoEstado = {
@@ -8603,6 +8039,10 @@ Future<Map<String, dynamic>> getOperacionByEstadoIdScalamin(
       'labor': '',
       'ala': '',
       'observaciones': '',
+      // 🔥 NUEVOS CAMPOS AGREGADOS
+      'metros_lineales': 0.0,
+      'area_m2': 0.0,
+      'tipo_labor_texto': '',
     };
   }
 
@@ -8619,7 +8059,21 @@ Future<Map<String, dynamic>> getOperacionByEstadoIdScalamin(
     if (estadoEncontrado != null &&
         estadoEncontrado.containsKey('operacion')) {
 
-      return Map<String, dynamic>.from(estadoEncontrado['operacion']);
+      // 🔥 Obtener la operación y asegurar que todos los campos existan
+      Map<String, dynamic> operacionData = 
+          Map<String, dynamic>.from(estadoEncontrado['operacion']);
+      
+      // 🔥 Asegurar que los nuevos campos existan con valores por defecto
+      return {
+        'nivel': operacionData['nivel'] ?? '',
+        'tipo_labor': operacionData['tipo_labor'] ?? '',
+        'labor': operacionData['labor'] ?? '',
+        'ala': operacionData['ala'] ?? '',
+        'observaciones': operacionData['observaciones'] ?? '',
+        'metros_lineales': operacionData['metros_lineales'] ?? 0.0,
+        'area_m2': operacionData['area_m2'] ?? 0.0,
+        'tipo_labor_texto': operacionData['tipo_labor_texto'] ?? '',
+      };
     } else {
       return {
         'nivel': '',
@@ -8627,6 +8081,9 @@ Future<Map<String, dynamic>> getOperacionByEstadoIdScalamin(
         'labor': '',
         'ala': '',
         'observaciones': '',
+        'metros_lineales': 0.0,
+        'area_m2': 0.0,
+        'tipo_labor_texto': '',
       };
     }
 
@@ -8639,6 +8096,9 @@ Future<Map<String, dynamic>> getOperacionByEstadoIdScalamin(
       'labor': '',
       'ala': '',
       'observaciones': '',
+      'metros_lineales': 0.0,
+      'area_m2': 0.0,
+      'tipo_labor_texto': '',
     };
   }
 }
@@ -8868,6 +8328,9 @@ Future<Map<String, dynamic>?> createReservaEstadoScalamin(
       'labor': '',
       'ala': '',
       'observaciones': '',
+      'metros_lineales': 0.0,
+      'area_m2': 0.0,
+      'tipo_labor_texto': '',
     },
   };
 
@@ -11390,13 +10853,13 @@ Future<bool> estaRegistroCerrado(int idExploracion) async {
   }
 
   Future<List<TipoPerforacion>> getTiposPerforacion() async {
-    final db = await database;
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db.query('TipoPerforacion');
     return List.generate(maps.length, (i) => TipoPerforacion.fromJson(maps[i]));
   }
 
   Future<List<PlanMensual>> getPlanes() async {
-    final db = await database;
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db.query('PlanMensual');
     return List.generate(maps.length, (i) => PlanMensual.fromJson(maps[i]));
   }
@@ -11408,7 +10871,7 @@ Future<bool> estaRegistroCerrado(int idExploracion) async {
     required String estructuraVeta,
     required String nivel,
   }) async {
-    final db = await database;
+    final db = await sharedDatabase;
 
     List<Map<String, dynamic>> result = await db.query(
       'PlanMensual',
@@ -11455,7 +10918,7 @@ Future<bool> estaRegistroCerrado(int idExploracion) async {
   }
 
   Future<List<Map<String, String>>> getAccesoriosunidad() async {
-    final db = await database;
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db
         .query('accesorios', columns: ['tipo_accesorio', 'unidad_medida']);
 
@@ -11468,7 +10931,7 @@ Future<bool> estaRegistroCerrado(int idExploracion) async {
   }
 
   Future<List<Map<String, String>>> getExplosivosunidad() async {
-    final db = await database;
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db
         .query('explosivos', columns: ['tipo_explosivo', 'unidad_medida']);
 
@@ -11491,7 +10954,7 @@ Future<bool> estaRegistroCerrado(int idExploracion) async {
   }
 
   Future<List<ExplosivosUni>> getExplosivosUni() async {
-    final db = await database; // Obtener la instancia de la base de datos
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps =
         await db.query('ExplosivosUni'); // Consultar la tabla
 
@@ -11874,7 +11337,7 @@ Future<List<Map<String, dynamic>>> getExploraciones() async {
   }
 
 Future<List<Map<String, dynamic>>> getMateriales(String proceso) async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   return await db.query(
     'materiales',
@@ -11884,14 +11347,14 @@ Future<List<Map<String, dynamic>>> getMateriales(String proceso) async {
   );
 }
   Future<List<Accesorio>> getAccesorios() async {
-    final db = await database;
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db.query('accesorios');
 
     return List.generate(maps.length, (i) => Accesorio.fromJson(maps[i]));
   }
 
    Future<List<Explosivo>> getExplosivos() async {
-    final db = await database;
+    final db = await sharedDatabase;
     final List<Map<String, dynamic>> maps = await db.query('explosivos');
 
     return List.generate(maps.length, (i) => Explosivo.fromJson(maps[i]));
@@ -12073,7 +11536,7 @@ Future<List<Map<String, dynamic>>> _obtenerDevolucionesPorExploracion(int explor
 
 
 Future<List<TipoPerforacion>> getTiposPerforacionhorizontalfil() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> maps = await db.query(
     'TipoPerforacion',
     where: 'proceso = ? AND permitido_medicion = ?',  // Cambio aquí
@@ -12178,7 +11641,7 @@ Future<int> eliminarMultiplesMedicionesLargo(List<int> ids) async {
 }
 //TONELADASSSS----------------------------------------------------------------------
 Future<List<Map<String, dynamic>>> obtenerTodasToneladas() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> result = await db.query(
     'toneladas',
     orderBy: 'fecha DESC', // Ordenar por fecha descendente
@@ -12187,7 +11650,7 @@ Future<List<Map<String, dynamic>>> obtenerTodasToneladas() async {
 }
 
   Future<List<TipoPerforacion>> getTiposPerforacionLargofil() async {
-  final db = await database;
+  final db = await sharedDatabase;
   final List<Map<String, dynamic>> maps = await db.query(
     'TipoPerforacion',
     where: 'proceso = ? AND permitido_medicion = ?',
@@ -12287,7 +11750,7 @@ Future<int> actualizarEnvioMedicionesHorizontal(List<int> ids) async {
 //EXPLOSIVOSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
 //Cantidad de retardos a mostrar
 Future<Map<String, dynamic>?> getUltimoNumeroRetardos() async {
-  final db = await database;
+  final db = await sharedDatabase;
 
   final result = await db.query(
     'numero_retardos',
@@ -12300,6 +11763,46 @@ Future<Map<String, dynamic>?> getUltimoNumeroRetardos() async {
   }
 
   return null;
+}
+
+//PDF GLOBAL-------------------------------------------------------------------------------------------------------------
+
+/// Retorna todos los registros de CarpetaModel
+Future<List<Map<String, dynamic>>> getAllCarpetas() async {
+  final db = await sharedDatabase;
+  return await db.query('CarpetaModel', orderBy: 'nombre ASC');
+}
+
+/// Retorna todos los PDFs. Opcionalmente filtra por carpeta_id.
+Future<List<Map<String, dynamic>>> getAllPdfs({int? carpetaId}) async {
+  final db = await sharedDatabase;
+  if (carpetaId != null) {
+    return await db.query(
+      'PdfModel',
+      where: 'carpeta_id = ?',
+      whereArgs: [carpetaId],
+      orderBy: 'nombre ASC',
+    );
+  }
+  return await db.query('PdfModel', orderBy: 'nombre ASC');
+}
+
+/// Retorna un PDF por su id local
+Future<PdfModel?> getPdfById(int id) async {
+  final db = await sharedDatabase;
+  final result = await db.query('PdfModel', where: 'id = ?', whereArgs: [id], limit: 1);
+  if (result.isNotEmpty) return PdfModel.fromMap(result.first);
+  return null;
+}
+
+
+//Operadores
+Future<List<Map<String, dynamic>>> getAllUsuarios() async {
+  final db = await sharedDatabase;
+  return await db.query(
+    'UsuariosModel', 
+    orderBy: 'apellidos ASC, nombres ASC'
+  );
 }
 
 }

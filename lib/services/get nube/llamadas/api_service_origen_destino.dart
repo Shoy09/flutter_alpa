@@ -25,7 +25,7 @@ class ApiServiceOrigenDestino {
             .toList();
 
         /// 🔹 Limpiar tabla local
-        await _dbHelper.deleteAll('origen_destino');
+        await _dbHelper.deleteAllShared('origen_destino');
 
         /// 🔹 Guardar en SQLite
         await saveToLocalDB(lista);
@@ -47,7 +47,7 @@ class ApiServiceOrigenDestino {
 
       data.remove('id'); // evitar conflicto con autoincrement
 
-      await _dbHelper.insert('origen_destino', data);
+      await _dbHelper.insertShared('origen_destino', data);
     }
   }
 }

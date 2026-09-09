@@ -39,7 +39,7 @@ class DialogoFormularioPerforacion extends StatefulWidget {
   final String estado;
   final Color primaryColor;
   final Function(Map<String, dynamic>) onGuardar;
-
+final String codigo; 
   const DialogoFormularioPerforacion({
     Key? key,
     required this.operacionId,
@@ -48,6 +48,7 @@ class DialogoFormularioPerforacion extends StatefulWidget {
     required this.estado,
     this.primaryColor = const Color(0xFF1B5E6B),
     required this.onGuardar,
+    required this.codigo,
   }) : super(key: key);
   
   @override
@@ -98,6 +99,16 @@ class _DialogoFormularioPerforacionState extends State<DialogoFormularioPerforac
     _cargarDatosIniciales();
     _cargarDatosDesdeBD();
   }
+
+  bool get _debeMostrarDatosPerforacion  {
+  // Códigos que NO deben mostrar cucharas: 111 y 112
+  final codigosOmitir = ['107', '108', '109', '110'];
+  
+  // Convertir a string para comparar
+  final codigoStr = widget.codigo.toString();
+  
+  return !codigosOmitir.contains(codigoStr);
+}
 
   Future<void> _cargarDatosDesdeBD() async {
     setState(() => isLoading = true);
@@ -270,17 +281,30 @@ class _DialogoFormularioPerforacionState extends State<DialogoFormularioPerforac
     }
   }
 
-  void _agregarBarraFila() {
-    setState(() {
+void _agregarBarraFila() {
+  setState(() {
+    // Si ya hay filas, copiar los datos de la ÚLTIMA fila
+    if (barrasFilas.isNotEmpty) {
+      final ultimaFila = barrasFilas.last;
+      barrasFilas.add(BarraFila(
+        nFila: ultimaFila.nFila,                    // Copiar N° Fila
+        nTaladro: ultimaFila.nTaladro,          // Incrementar Taladro en 1
+        nBarras: ultimaFila.nBarras,                // Copiar N° Barras
+        tipoPerforacion: ultimaFila.tipoPerforacion, // Copiar Tipo Perforación
+        longitud_perforacion: ultimaFila.longitud_perforacion, // Copiar Longitud
+      ));
+    } else {
+      // Si no hay filas, crear con valores por defecto
       barrasFilas.add(BarraFila(
         nFila: 0,
-         nTaladro: 0,
-         nBarras: 0,
-         tipoPerforacion: '',
+        nTaladro: 1,
+        nBarras: 0,
+        tipoPerforacion: '',
         longitud_perforacion: 0.0,
       ));
-    });
-  }
+    }
+  });
+}
 
   void _eliminarBarraFila(int index) {
     setState(() {
@@ -321,31 +345,26 @@ class _DialogoFormularioPerforacionState extends State<DialogoFormularioPerforac
   return valor.toString();
 }
 
-  Future<void> _guardarDatos() async {
-    // Obtener el labor final (texto libre o seleccionado)
-    String laborFinal = laborSeleccionado ?? '';
-    
-    // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
-    if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
-      laborFinal = ubicacionController.text.trim();
-    }
-    
-    if (laborFinal.isEmpty) {
-      _mostrarSnackbar('Debe ingresar o seleccionar una ubicación', Colors.orange);
-      return;
-    }
-
-    Map<String, dynamic> datosFormulario = {
-      'labor': laborFinal,
-      // 'long_barras': longitudBarraSeleccionada ?? '',
-      'observaciones': observacionesController.text,
-      'barras': barrasFilas.map((barra) => barra.toMap()).toList(),
-    };
-
-    widget.onGuardar(datosFormulario);
-    _mostrarSnackbar('Formulario guardado correctamente', Colors.green);
-    Navigator.pop(context);
+Future<void> _guardarDatos() async {
+  // Obtener el labor final (texto libre o seleccionado)
+  String laborFinal = laborSeleccionado ?? '';
+  
+  // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
+  if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
+    laborFinal = ubicacionController.text.trim();
   }
+  
+  // 🔥 GUARDAR SI O SI - SIN VALIDACIÓN
+  Map<String, dynamic> datosFormulario = {
+    'labor': laborFinal,  // Puede estar vacío
+    'observaciones': observacionesController.text,  // Puede estar vacío
+    'barras': barrasFilas.map((barra) => barra.toMap()).toList(),  // Puede estar vacío
+  };
+
+  widget.onGuardar(datosFormulario);
+  _mostrarSnackbar('Formulario guardado correctamente', Colors.green);
+  Navigator.pop(context);
+}
 
   void _mostrarSnackbar(String mensaje, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -397,10 +416,12 @@ class _DialogoFormularioPerforacionState extends State<DialogoFormularioPerforac
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildSeccionUbicacion(),
+                          if (_debeMostrarDatosPerforacion) ...[
                           const SizedBox(height: 12),
                           //_buildSeccionBarras(),
                           const SizedBox(height: 12),
                           _buildSeccionBarrasFila(),
+                          ],
                           const SizedBox(height: 12),
                           _buildSeccionObservaciones(),
                         ],

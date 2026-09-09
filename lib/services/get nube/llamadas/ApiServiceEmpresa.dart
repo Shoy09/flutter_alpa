@@ -25,7 +25,7 @@ class ApiServiceEmpresa {
             .toList();
 
         // Eliminar datos antiguos
-        await _dbHelper.deleteAll('Empresa');
+        await _dbHelper.deleteAllShared('Empresa');
 
         // Guardar en DB local
         await saveEmpresasToLocalDB(empresas);
@@ -48,7 +48,7 @@ class ApiServiceEmpresa {
 
       empresaData.remove('id'); // evitar conflicto con id autoincrement
 
-      await _dbHelper.insert('Empresa', empresaData);
+      await _dbHelper.insertShared('Empresa', empresaData);
     }
   }
 }

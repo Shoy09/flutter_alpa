@@ -28,8 +28,9 @@ class _RegistroOperacionDialogState extends State<RegistroOperacionDialog> {
   String? selectedCodigo;
   String? selectedTime;
   late bool isEditing;
+  
 
-   // Función auxiliar para comparar tiempos
+    // Función auxiliar para comparar tiempos
   int _convertToShiftMinutes(String time) {
   final parts = time.split(':').map(int.parse).toList();
   int hour = parts[0];
@@ -47,49 +48,54 @@ class _RegistroOperacionDialogState extends State<RegistroOperacionDialog> {
   return totalMinutes;
 }
 
-int _compareTimes(String time1, String time2) {
+int _compareTimes(String time1_12h, String time2_12h) {
   try {
-    return _convertToShiftMinutes(time1) - _convertToShiftMinutes(time2);
+    String time1_24h = _formatTo24Hour(time1_12h);
+    String time2_24h = _formatTo24Hour(time2_12h);
+    return _convertToShiftMinutes(time1_24h) - _convertToShiftMinutes(time2_24h);
   } catch (e) {
     return 0;
   }
 }
 
   // Función para generar intervalos de tiempo cada 5 minutos
-  List<String> _generateTimeIntervals(String turno) {
+List<String> _generateTimeIntervals(String turno) {
   List<String> times = [];
 
   if (turno == "DÍA") {
-    // Turno día: 07:00 - 17:25
+    // Turno día: 07:00 - 17:55
     for (int hour = 7; hour <= 17; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
-        if (hour == 17 && minute > 25) break;
+        if (hour == 17 && minute > 55) break;
 
-        times.add(
-          "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}"
-        );
+        String time24 =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
+        times.add(_formatTo12Hour(time24));
       }
     }
   } else {
-    // Turno noche: 19:00 - 05:25
+    // Turno noche: 19:00 - 05:55
 
     // Parte 1: 19:00 - 23:55
     for (int hour = 19; hour < 24; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
-        times.add(
-          "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}"
-        );
+        String time24 =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
+        times.add(_formatTo12Hour(time24));
       }
     }
 
-    // Parte 2: 00:00 - 05:25
+    // Parte 2: 00:00 - 05:55
     for (int hour = 0; hour <= 5; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
-        if (hour == 5 && minute > 25) break;
+        if (hour == 5 && minute > 55) break;
 
-        times.add(
-          "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}"
-        );
+        String time24 =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
+        times.add(_formatTo12Hour(time24));
       }
     }
   }
@@ -97,65 +103,108 @@ int _compareTimes(String time1, String time2) {
   return times;
 }
 
-  // Función para obtener el rango de horas válidas al editar
-  List<String> _getValidTimeRangeForEdit() {
-    if (!isEditing || widget.existingRecord == null) return [];
+// Convierte de formato 24h a 12h con AM/PM
+String _formatTo12Hour(String time24) {
+  try {
+    final parts = time24.split(':');
+    int hour = int.parse(parts[0]);
+    int minute = int.parse(parts[1]);
     
-    // Encontrar el índice del registro actual
-    int currentIndex = widget.codigoOperativos.indexWhere(
-      (item) => item["id"] == widget.existingRecord!["id"],
-    );
+    final period = hour >= 12 ? 'PM' : 'AM';
+    int hour12 = hour % 12;
+    if (hour12 == 0) hour12 = 12;
     
-    if (currentIndex == -1) return [];
-    
-    String? minTime;
-    String? maxTime;
-    
-    // Si hay registro anterior, su hora_inicio es el límite inferior
-    if (currentIndex > 0) {
-      minTime = widget.codigoOperativos[currentIndex - 1]["hora_inicio"];
-      if (minTime?.contains(' ') == true) {
-        minTime = minTime!.split(' ')[1];
-      }
-    }
-    
-    // Si hay registro siguiente, su hora_inicio es el límite superior
-    if (currentIndex < widget.codigoOperativos.length - 1) {
-      maxTime = widget.codigoOperativos[currentIndex + 1]["hora_inicio"];
-      if (maxTime?.contains(' ') == true) {
-        maxTime = maxTime!.split(' ')[1];
-      }
-    }
-    
-    // Generar todas las opciones de tiempo
-    List<String> allTimes = _generateTimeIntervals(widget.turno);
-    
-    // Filtrar según los límites
-    return allTimes.where((time) {
-      if (minTime != null && _compareTimes(time, minTime) <= 0) return false;
-      if (maxTime != null && _compareTimes(time, maxTime) >= 0) return false;
-      return true;
-    }).toList();
+    return '${hour12.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
+  } catch (e) {
+    return time24;
   }
+}
 
-  bool _isValidTimeForShift(String time, String shift) {
-    try {
-      final hour = int.parse(time.split(':')[0]);
-      final minute = int.parse(time.split(':')[1]);
-      if (shift == "DÍA") {
-        // Validar entre 7:00 y 18:55
-        if (hour < 7 || hour > 18) return false;
-        if (hour == 18 && minute > 55) return false;
-      } else {
-        // Validar entre 19:00-23:55 y 00:00-06:55
-        if (hour > 6 && hour < 19) return false;
-        if (hour == 6 && minute > 55) return false;
-      }
-      return true;
-    } catch (e) {
-      return false;
-    }
+// Convierte de formato 12h a 24h (para la lógica interna)
+String _formatTo24Hour(String time12) {
+  try {
+    final parts = time12.split(' ');
+    final timeParts = parts[0].split(':');
+    int hour = int.parse(timeParts[0]);
+    int minute = int.parse(timeParts[1]);
+    final period = parts[1];
+    
+    if (period == 'PM' && hour != 12) hour += 12;
+    if (period == 'AM' && hour == 12) hour = 0;
+    
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+  } catch (e) {
+    return time12;
   }
+}
+
+  // Función para obtener el rango de horas válidas al editar
+// Función para obtener el rango de horas válidas al editar
+List<String> _getValidTimeRangeForEdit() {
+  if (!isEditing || widget.existingRecord == null) return [];
+  
+  int currentIndex = widget.codigoOperativos.indexWhere(
+    (item) => item["id"] == widget.existingRecord!["id"],
+  );
+  
+  if (currentIndex == -1) return [];
+  
+  String? minTime;
+  String? maxTime;
+  
+  // Si hay registro anterior, su hora_inicio es el límite inferior
+  if (currentIndex > 0) {
+    minTime = widget.codigoOperativos[currentIndex - 1]["hora_inicio"];
+    // Convertir de 24h a 12h para comparar
+    if (minTime != null) minTime = _formatTo12Hour(minTime);
+  }
+  
+  // Si hay registro siguiente, su hora_inicio es el límite superior
+  if (currentIndex < widget.codigoOperativos.length - 1) {
+    maxTime = widget.codigoOperativos[currentIndex + 1]["hora_inicio"];
+    // Convertir de 24h a 12h para comparar
+    if (maxTime != null) maxTime = _formatTo12Hour(maxTime);
+  }
+  
+  // Generar todas las opciones de tiempo (ya en 12h)
+  List<String> allTimes = _generateTimeIntervals(widget.turno);
+  
+  // Filtrar según los límites
+  return allTimes.where((time) {
+    if (minTime != null && _compareTimes(time, minTime) <= 0) return false;
+    if (maxTime != null && _compareTimes(time, maxTime) >= 0) return false;
+    return true;
+  }).toList();
+}
+
+bool _isValidTimeForShift(String time12h, String shift) {
+  try {
+    String time24h = _formatTo24Hour(time12h);
+
+    final hour = int.parse(time24h.split(':')[0]);
+    final minute = int.parse(time24h.split(':')[1]);
+
+    if (shift == "DÍA") {
+      // 07:00 AM - 05:55 PM
+      if (hour < 7 || hour > 17) return false;
+
+      if (hour == 17 && minute > 55) return false;
+    } else {
+      // 07:00 PM - 05:55 AM
+
+      // Bloquear rango inválido 06:00 AM -> 06:59 PM
+      if (hour > 5 && hour < 19) return false;
+
+      if (hour == 19 && minute < 0) return false;
+
+      if (hour == 5 && minute > 55) return false;
+    }
+
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
   List<DropdownMenuItem<String>> _obtenerOpcionesUnicas(
       List<Map<String, dynamic>> data) {
@@ -245,41 +294,47 @@ int _compareTimes(String time1, String time2) {
   }
 
   void _handleConfirm() {
-    if (!_validateSelection()) return;
+  if (!_validateSelection()) return;
 
-    // Preparar los datos para enviar al padre
-    final data = {
-      'codigo': selectedCodigo,
-      'hora_inicio': selectedTime,
-      'estado': widget.selectedState,
-      if (isEditing) 'id': widget.existingRecord!['id'],
-      if (isEditing) 'numero': widget.existingRecord!['numero'],
-      if (isEditing) 'hora_final': widget.existingRecord!['hora_final'],
-    };
+  // Preparar los datos para enviar al padre
+  final data = {
+    'codigo': selectedCodigo,
+    'hora_inicio': _formatTo24Hour(selectedTime!), // Convertir a 24h para guardar
+    'estado': widget.selectedState,
+    if (isEditing) 'id': widget.existingRecord!['id'],
+    if (isEditing) 'numero': widget.existingRecord!['numero'],
+    if (isEditing) 'hora_final': widget.existingRecord!['hora_final'],
+  };
 
-    widget.onConfirm(data);
-  }
+  widget.onConfirm(data);
+}
 
   void _handleClear() {
-    setState(() {
-      if (widget.existingRecord != null) {
-        selectedCodigo = widget.existingRecord!['codigo'];
-        selectedTime = widget.existingRecord!['hora_inicio'];
-      } else {
-        selectedCodigo = null;
-        selectedTime = null;
-      }
-    });
-  }
+  setState(() {
+    if (widget.existingRecord != null) {
+      selectedCodigo = widget.existingRecord!['codigo'];
+      selectedTime = _formatTo12Hour(widget.existingRecord!['hora_inicio']!);
+    } else {
+      selectedCodigo = null;
+      selectedTime = null;
+    }
+  });
+}
 
   @override
   void initState() {
     super.initState();
+
+     print('=== ÚLTIMA HORA REGISTRADA ===');
+    print('Valor: ${widget.ultimaHoraRegistrada}');
+    print('Turno actual: ${widget.turno}');
+    print('===============================');
+    
     isEditing = widget.existingRecord != null;
     
     if (isEditing && widget.existingRecord != null) {
       selectedCodigo = widget.existingRecord!['codigo'];
-      selectedTime = widget.existingRecord!['hora_inicio'];
+      selectedTime = _formatTo12Hour(widget.existingRecord!['hora_inicio']!);
     }
   }
 
@@ -322,12 +377,32 @@ int _compareTimes(String time1, String time2) {
               style: const TextStyle(fontWeight: FontWeight.bold)
             ),
             if (!isEditing && widget.ultimaHoraRegistrada != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                "Última hora: ${widget.ultimaHoraRegistrada}",
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-            ],
+  const SizedBox(height: 4),
+  Text(
+    "Última hora: ${_formatTo12Hour(widget.ultimaHoraRegistrada!)}",
+    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+  ),
+],
+if (!isEditing && widget.ultimaHoraRegistrada != null)
+  Padding(
+    padding: const EdgeInsets.only(top: 8),
+    child: Row(
+      children: [
+        Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            'Solo horas posteriores a ${_formatTo12Hour(widget.ultimaHoraRegistrada!)}',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      ],
+    ),
+  ),
           ],
         ),
       ),
@@ -386,8 +461,8 @@ int _compareTimes(String time1, String time2) {
                 decoration: InputDecoration(
                   labelText: "Hora Inicio (*)",
                   hintText: widget.ultimaHoraRegistrada != null && !isEditing
-                      ? "Seleccione > ${widget.ultimaHoraRegistrada}"
-                      : null,
+    ? "Seleccione > ${_formatTo12Hour(widget.ultimaHoraRegistrada!)}"
+    : null,
                   contentPadding: const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
                   border: const OutlineInputBorder(),
                 ),

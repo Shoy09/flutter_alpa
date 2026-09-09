@@ -25,7 +25,7 @@ class ApiServiceGuardia {
             .toList();
 
         // Eliminar datos antiguos
-        await _dbHelper.deleteAll('Guardia');
+        await _dbHelper.deleteAllShared('Guardia');
 
         // Guardar nuevos datos
         await saveGuardiasToLocalDB(guardias);
@@ -49,7 +49,7 @@ class ApiServiceGuardia {
       // Evitar conflictos con autoincrement local
       guardiaData.remove('id');
 
-      await _dbHelper.insert('Guardia', guardiaData);
+      await _dbHelper.insertShared('Guardia', guardiaData);
     }
   }
 }

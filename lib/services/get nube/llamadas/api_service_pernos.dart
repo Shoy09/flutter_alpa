@@ -23,7 +23,7 @@ class ApiServicePernos {
             .map((data) => Perno.fromJson(data))
             .toList();
 
-        await _dbHelper.deleteAll('pernos');
+        await _dbHelper.deleteAllShared('pernos');
         await saveToLocalDB(lista);
 
         return lista;
@@ -40,7 +40,7 @@ class ApiServicePernos {
       Map<String, dynamic> data = item.toMap();
       data.remove('id');
 
-      await _dbHelper.insert('pernos', data);
+      await _dbHelper.insertShared('pernos', data);
     }
   }
 }

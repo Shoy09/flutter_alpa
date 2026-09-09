@@ -25,7 +25,7 @@ class ApiServiceChecklistTelemando {
             .toList();
 
         /// Eliminar datos antiguos
-        await _dbHelper.deleteAll('checklists_telemando');
+        await _dbHelper.deleteAllShared('checklists_telemando');
 
         /// Guardar en DB local
         await saveChecklistToLocalDB(checklist);
@@ -47,7 +47,7 @@ class ApiServiceChecklistTelemando {
 
       data.remove('id'); // evitar conflicto con autoincrement
 
-      await _dbHelper.insert('checklists_telemando', data);
+      await _dbHelper.insertShared('checklists_telemando', data);
     }
   }
 }

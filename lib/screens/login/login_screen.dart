@@ -30,9 +30,9 @@ Future<void> handleLogin() async {
 
   final dni = dniController.text.trim();
   final pass = passController.text.trim();
+  String errorMsg = '';
 
   try {
-
     /// 1️⃣ LOGIN ONLINE
     try {
       final token = await ApiService().login(dni, pass);
@@ -41,7 +41,6 @@ Future<void> handleLogin() async {
       try {
         userData = await UserService().getUserProfile(token);
       } catch (profileError) {
-        // Fallback: extraer datos básicos del payload del JWT
         print("⚠️ getUserProfile falló, usando payload JWT: $profileError");
         final payload = UserService().decodeTokenPayload(token);
         if (payload.isEmpty) rethrow;
@@ -51,22 +50,22 @@ Future<void> handleLogin() async {
       await DatabaseHelper().setCurrentUserDni(dni);
       await DatabaseHelper().saveUser(userData, pass);
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => DashboardScreen(
-            token: token,
-            dni: dni,
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DashboardScreen(
+              token: token,
+              dni: dni,
+            ),
           ),
-        ),
-      );
-
+        );
+      }
       return;
 
     } catch (e) {
-      // Mensaje limpio: quitar prefijo "Exception:" y stack traces
       final msg = e.toString().replaceFirst('Exception: ', '');
-      errorMsg = msg;
+      errorMsg = '🌐 Error de conexión: $msg';
       print("LOGIN ONLINE: $e");
     }
 
@@ -74,38 +73,55 @@ Future<void> handleLogin() async {
     try {
       await DatabaseHelper().setCurrentUserDni(dni);
 
-      if (await DatabaseHelper().loginOffline(dni, pass)) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DashboardScreen(
-              token: "offline",
-              dni: dni,
+      final loginSuccess = await DatabaseHelper().loginOffline(dni, pass);
+      
+      if (loginSuccess) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DashboardScreen(
+                token: "offline",
+                dni: dni,
+              ),
             ),
-          ),
-        );
+          );
+        }
         return;
+      } else {
+        // Si falló offline, agregamos mensaje pero no mostramos error inmediatamente
+        errorMsg = errorMsg.isNotEmpty 
+            ? '$errorMsg\n\n📱 Sin conexión: Credenciales incorrectas'
+            : '📱 Sin conexión: Credenciales incorrectas';
       }
 
     } catch (offlineError) {
       final msg = offlineError.toString().replaceFirst('Exception: ', '');
-      errorMsg += '\nOffline: $msg';
+      errorMsg = errorMsg.isNotEmpty 
+          ? '$errorMsg\n\n📱 Error offline: $msg'
+          : '📱 Error offline: $msg';
       print("LOGIN OFFLINE: $offlineError");
     }
 
     /// 3️⃣ SI TODO FALLA
-    _showLoginError(
-      errorMsg.isNotEmpty
-          ? errorMsg
-          : 'Credenciales incorrectas o sin conexión.',
-    );
+    if (mounted) {
+      _showLoginError(
+        errorMsg.isNotEmpty
+            ? errorMsg
+            : 'Credenciales incorrectas o sin conexión.',
+      );
+    }
 
   } finally {
-    setState(() {
-      isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 }
+
+
 
 void _showLoginError(String error) {
   showDialog(

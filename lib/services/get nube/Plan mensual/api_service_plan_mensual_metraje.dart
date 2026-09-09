@@ -23,7 +23,7 @@ class ApiServicePlanMetraje {
         List<PlanMetraje> planes =
             responseData.map((data) => PlanMetraje.fromJson(data)).toList();
 
-        await _dbHelper.deleteAll('PlanMetraje');
+        await _dbHelper.deleteAllShared('PlanMetraje');
         await savePlanesToLocalDB(planes);
 
         return planes;
@@ -40,7 +40,7 @@ class ApiServicePlanMetraje {
     for (var plan in planes) {
       Map<String, dynamic> planData = plan.toMap();
       planData.remove('id');
-      await _dbHelper.insert('PlanMetraje', planData);
+      await _dbHelper.insertShared('PlanMetraje', planData);
     }
   }
 }

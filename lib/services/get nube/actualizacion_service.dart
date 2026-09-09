@@ -11,9 +11,12 @@ import 'package:i_miner/services/get%20nube/llamadas/ApiServiceHorometros%20.dar
 import 'package:i_miner/services/get%20nube/llamadas/ApiServiceJefeGuardia.dart';
 import 'package:i_miner/services/get%20nube/llamadas/ApiServiceMaterial.dart';
 import 'package:i_miner/services/get%20nube/llamadas/ApiServiceNumeroRetardos.dart';
+import 'package:i_miner/services/get%20nube/llamadas/ApiServicePdf.dart';
 import 'package:i_miner/services/get%20nube/llamadas/ApiServiceSeccion.dart';
 import 'package:i_miner/services/get%20nube/llamadas/ApiServiceTipoEquipo.dart';
 import 'package:i_miner/services/get%20nube/llamadas/ApiServiceTipoPerforacion.dart';
+import 'package:i_miner/services/get%20nube/llamadas/ApiServiceUsuario.dart';
+import 'package:i_miner/services/get%20nube/llamadas/ApiServiceUsuarios.dart';
 import 'package:i_miner/services/get%20nube/llamadas/api_service_checklist.dart';
 import 'package:i_miner/services/get%20nube/llamadas/api_service_estado.dart';
 import 'package:i_miner/services/get%20nube/llamadas/api_service_explosivos.dart';
@@ -22,6 +25,7 @@ import 'package:i_miner/services/get%20nube/llamadas/api_service_longitud_barras
 import 'package:i_miner/services/get%20nube/llamadas/api_service_mallas.dart';
 import 'package:i_miner/services/get%20nube/llamadas/api_service_origen_destino.dart';
 import 'package:i_miner/services/get%20nube/llamadas/api_service_pernos.dart';
+import 'package:i_miner/services/get%20nube/llamadas/api_service_tipo_labor.dart';
 import 'package:i_miner/services/get%20nube/llamadas/api_services_Equipo.dart';
 
 class ActualizacionService {
@@ -66,8 +70,12 @@ class ActualizacionService {
           fetchJefesGuardia,
           "Guardias": fetchGuardias,
       "Empresas":() => fetchEmpresas(),
+      "Documentos":() => fetchPdfsDelMes(),
       // "Procesos Acero": fetchProcesosAcero,
       // "Operadores Acero": fetchOperadores,
+      "Operadores":() => fetchNombresUsuarios(),
+      "Usuarios":() => syncUsuariosMaestros(),
+      "Tipo Labor":() => fetchTiposLabor(),
     };
   }
 
@@ -77,11 +85,25 @@ class ActualizacionService {
   ) async {
     _inicializarRequests();
 
-    // Mostrar diálogo de progreso inicial
-    _mostrarDialogoProgreso('Iniciando actualización...');
+    final int total = opcionesSeleccionadas.values.where((v) => v).length;
+    final controller = ProgressDialogController();
+
+    // Mostrar diálogo de progreso (una sola vez)
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ProgressDialog(
+        message: 'Iniciando actualización...',
+        total: total,
+        controller: controller,
+        primaryColor: Colors.blue[700],
+      ),
+    );
+
+    // Pequeña pausa para que el diálogo se monte antes de actualizar
+    await Future.delayed(const Duration(milliseconds: 120));
 
     try {
-      int total = opcionesSeleccionadas.values.where((v) => v).length;
       int completadas = 0;
       bool huboError = false;
       List<String> errores = [];
@@ -89,10 +111,11 @@ class ActualizacionService {
       // Ejecutar cada opción seleccionada
       for (var entry in _requests.entries) {
         if (opcionesSeleccionadas[entry.key] == true) {
-          // Actualizar mensaje de progreso
-          _actualizarDialogoProgreso(
-            'Actualizando ${entry.key}...',
+          controller.update(
+            message: 'Actualizando ${entry.key}...',
             subtitulo: '$completadas de $total completadas',
+            completadas: completadas,
+            total: total,
           );
 
           try {
@@ -104,32 +127,33 @@ class ActualizacionService {
             errores.add('${entry.key}: $e');
             print("❌ Error en ${entry.key}: $e");
           }
+
+          // Actualizar progreso tras completar
+          controller.update(
+            message: completadas < total
+                ? 'Actualizando ${entry.key}...'
+                : 'Finalizando...',
+            subtitulo: '$completadas de $total completadas',
+            completadas: completadas,
+            total: total,
+          );
         }
       }
 
+      // Pequeña pausa para mostrar el 100%
+      await Future.delayed(const Duration(milliseconds: 350));
+
       // Cerrar diálogo de progreso
-      Navigator.of(context, rootNavigator: true).pop();
-
-      // Mostrar resultado final
-      _mostrarResultadoFinal(completadas, total, huboError, errores);
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        _mostrarResultadoFinal(completadas, total, huboError, errores);
+      }
     } catch (e) {
-      Navigator.of(context, rootNavigator: true).pop();
-      _mostrarError('Error general: $e');
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        _mostrarError('Error general: $e');
+      }
     }
-  }
-
-  void _mostrarDialogoProgreso(String mensaje, {String? subtitulo}) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ProgressDialog(message: mensaje, subtitulo: subtitulo),
-    );
-  }
-
-  void _actualizarDialogoProgreso(String mensaje, {String? subtitulo}) {
-    // Cerrar el diálogo actual y mostrar uno nuevo
-    Navigator.of(context, rootNavigator: true).pop();
-    _mostrarDialogoProgreso(mensaje, subtitulo: subtitulo);
   }
 
   void _mostrarResultadoFinal(
@@ -138,80 +162,25 @@ class ActualizacionService {
     bool huboError,
     List<String> errores,
   ) {
-    String mensaje;
-    Color color;
-
-    if (completadas == total && !huboError) {
-      mensaje =
-          '✅ $completadas de $total actualizaciones completadas correctamente';
-      color = Colors.green;
-    } else if (completadas > 0) {
-      mensaje =
-          '⚠️ $completadas de $total completadas (${errores.length} fallaron)';
-      color = Colors.orange;
-    } else {
-      mensaje = '❌ No se pudo completar ninguna actualización';
-      color = Colors.red;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
-        action: errores.isNotEmpty
-            ? SnackBarAction(
-                label: 'VER ERRORES',
-                textColor: Colors.white,
-                onPressed: () => _mostrarDetalleErrores(errores),
-              )
-            : null,
-      ),
-    );
-  }
-
-  void _mostrarDetalleErrores(List<String> errores) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Errores de actualización'),
-        content: Container(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: errores.length,
-            itemBuilder: (context, index) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.error_outline, color: Colors.red, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(errores[index])),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
+      builder: (_) => ResultadoActualizacionDialog(
+        completadas: completadas,
+        total: total,
+        errores: errores,
+        primaryColor: Colors.blue[700],
       ),
     );
   }
 
   void _mostrarError(String mensaje) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
+    showDialog(
+      context: context,
+      builder: (_) => ResultadoActualizacionDialog(
+        completadas: 0,
+        total: 1,
+        errores: [mensaje],
+        primaryColor: Colors.blue[700],
       ),
     );
   }
@@ -283,6 +252,23 @@ class ActualizacionService {
       throw e;
     }
   }
+
+  Future<void> fetchTiposLabor() async {
+  final apiService = ApiServiceTipoLabor();
+
+  try {
+    final tiposLabor = await apiService.fetchTiposLabor(token);
+
+    print("✅ Tipos de Labor guardados en SQLite:");
+
+    for (var tipo in tiposLabor) {
+      print("Tipo: ${tipo.nombre} | Proceso: ${tipo.proceso ?? 'Sin proceso'}");
+    }
+  } catch (e) {
+    print("❌ Error al actualizar tipos de labor: $e");
+    throw e;
+  }
+}
 
   Future<void> fetchEquipo() async {
     final apiService = ApiServiceEquipo();
@@ -564,8 +550,53 @@ Future<void> fetchNumeroRetardos() async {
     throw e;
   }
 }
-  Future<void> fetchPdfsDelMes() async {}
+  Future<void> fetchPdfsDelMes() async {
+  final apiService = ApiServicePdf();
 
+  try {
+    await apiService.sincronizarTodo(token);
+
+    print("✅ PDFs y carpetas sincronizados correctamente");
+  } catch (e) {
+    print("❌ Error al actualizar PDFs y carpetas: $e");
+    throw e;
+  }
+}
+
+Future<void> fetchNombresUsuarios() async {
+  final apiService = ApiServiceUsuarios();
+
+  try {
+    final usuarios = await apiService.fetchNombresUsuarios(token);
+
+    print("✅ Nombres de usuarios guardados en SQLite:");
+
+    for (var usuario in usuarios) {
+      print("Usuario: ${usuario.nombreCompleto} (ID: ${usuario.usuarioId})");
+    }
+  } catch (e) {
+    print("❌ Error al actualizar nombres de usuarios: $e");
+    throw e;
+  }
+}
+
+
+Future<void> syncUsuariosMaestros() async {
+  final apiServiceUsuario = ApiServiceUsuario();
+
+  try {
+    final usuarios = await apiServiceUsuario.fetchUsuarios(token);
+
+    print("✅ ${usuarios.length} usuarios maestros sincronizados en SQLite:");
+
+    for (var usuario in usuarios) {
+      print("Usuario: ${usuario.nombres} ${usuario.apellidos} (DNI: ${usuario.codigoDni})");
+    }
+  } catch (e) {
+    print("❌ Error al sincronizar usuarios maestros: $e");
+    throw e;
+  }
+}
   Future<void> fetchJefesGuardia() async {
     final apiService = ApiServiceJefeGuardia();
 

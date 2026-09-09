@@ -25,7 +25,7 @@ class ApiServiceJefeGuardia {
             .toList();
 
         // Eliminar datos antiguos
-        await _dbHelper.deleteAll('jefe_guardias');
+        await _dbHelper.deleteAllShared('jefe_guardias');
 
         // Guardar en DB local
         await saveJefesToLocalDB(jefes);
@@ -47,7 +47,7 @@ class ApiServiceJefeGuardia {
 
       jefeData.remove('id'); // evitar conflicto con autoincrement local
 
-      await _dbHelper.insert('jefe_guardias', jefeData);
+      await _dbHelper.insertShared('jefe_guardias', jefeData);
     }
   }
 }

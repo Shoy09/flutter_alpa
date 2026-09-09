@@ -47,22 +47,22 @@ class BotonesAccionesInferiores extends StatelessWidget {
                   label: 'Horómetro',
                   onPressed: onHorometroPressed,
                 ),
-                _buildAccionBoton(
-                  icon: Icons.build,
-                  label: 'Condiciones de equipo',
-                  onPressed: onCondicionesEquipoPressed,
-                ),
-                _buildAccionBoton(
-                  icon: Icons.checklist,
-                  label: 'CheckList',
-                  onPressed: onChecklistPressed,
-                ),
+                // _buildAccionBoton(
+                //   icon: Icons.build,
+                //   label: 'Condiciones de equipo',
+                //   onPressed: onCondicionesEquipoPressed,
+                // ),
+                // _buildAccionBoton(
+                //   icon: Icons.checklist,
+                //   label: 'CheckList',
+                //   onPressed: onChecklistPressed,
+                // ),
                 
-                _buildAccionBoton(
-                  icon: Icons.tire_repair,
-                  label: 'Presión de llantas',
-                  onPressed: onPresionLlantasPressed,
-                ),
+                // _buildAccionBoton(
+                //   icon: Icons.tire_repair,
+                //   label: 'Presión de llantas',
+                //   onPressed: onPresionLlantasPressed,
+                // ),
                 _buildAccionBoton(
                   icon: Icons.lock_outline,
                   label: 'Cerrar registro',
@@ -78,11 +78,11 @@ class BotonesAccionesInferiores extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildAccionBoton(
-                    icon: Icons.checklist,
-                    label: 'CheckList',
-                    onPressed: onChecklistPressed,
-                  ),
+                  // _buildAccionBoton(
+                  //   icon: Icons.checklist,
+                  //   label: 'CheckList',
+                  //   onPressed: onChecklistPressed,
+                  // ),
                   const SizedBox(width: 8),
                   _buildAccionBoton(
                     icon: Icons.speed,
@@ -95,18 +95,18 @@ class BotonesAccionesInferiores extends StatelessWidget {
                     label: 'Cerrar',
                     onPressed: onCerrarRegistrosPressed,
                   ),
-                  const SizedBox(width: 8),
-                  _buildAccionBoton(
-                    icon: Icons.build,
-                    label: 'Condiciones',
-                    onPressed: onCondicionesEquipoPressed,
-                  ),
-                  const SizedBox(width: 8),
-                  _buildAccionBoton(
-                    icon: Icons.tire_repair,
-                    label: 'Presión',
-                    onPressed: onPresionLlantasPressed,
-                  ),
+                  // const SizedBox(width: 8),
+                  // _buildAccionBoton(
+                  //   icon: Icons.build,
+                  //   label: 'Condiciones',
+                  //   onPressed: onCondicionesEquipoPressed,
+                  // ),
+                  // const SizedBox(width: 8),
+                  // _buildAccionBoton(
+                  //   icon: Icons.tire_repair,
+                  //   label: 'Presión',
+                  //   onPressed: onPresionLlantasPressed,
+                  // ),
                 ],
               ),
             );

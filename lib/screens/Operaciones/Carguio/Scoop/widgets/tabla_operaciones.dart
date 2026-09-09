@@ -16,6 +16,25 @@ class TablaOperaciones extends StatelessWidget {
     required this.primaryColor,
   }) : super(key: key);
 
+  // 🔥 FUNCIÓN PARA CONVERTIR 24h → 12h CON AM/PM
+  String _formatTo12Hour(String time24) {
+    if (time24.isEmpty || time24 == '--:--' || time24 == '') return time24;
+    
+    try {
+      final parts = time24.split(':');
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+      
+      final period = hour >= 12 ? 'PM' : 'AM';
+      int hour12 = hour % 12;
+      if (hour12 == 0) hour12 = 12;
+      
+      return '${hour12.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
+    } catch (e) {
+      return time24;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
@@ -122,6 +141,10 @@ class TablaOperaciones extends StatelessWidget {
     Color estadoColor = _getEstadoColor(estado);
     IconData estadoIcon = _getEstadoIcon(estado);
 
+    // 🔥 CONVERTIR HORAS A FORMATO 12H CON AM/PM
+    final String horaInicio = _formatTo12Hour(operacion['horaInicio'] ?? '--:--');
+    final String horaFin = _formatTo12Hour(operacion['horaFin'] ?? '--:--');
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isMobile ? 8 : 16,
@@ -197,20 +220,20 @@ class TablaOperaciones extends StatelessWidget {
             ),
           ),
 
-          /// HORA INICIO
+          /// 🔥 HORA INICIO (formato 12h)
           Expanded(
             flex: isMobile ? 1 : 2,
             child: Text(
-              operacion['horaInicio'] ?? '--:--',
+              horaInicio,
               style: TextStyle(fontSize: isMobile ? 11 : 12),
             ),
           ),
 
-          /// HORA FIN
+          /// 🔥 HORA FIN (formato 12h)
           Expanded(
             flex: isMobile ? 1 : 2,
             child: Text(
-              operacion['horaFin'] ?? '--:--',
+              horaFin,
               style: TextStyle(fontSize: isMobile ? 11 : 12),
             ),
           ),

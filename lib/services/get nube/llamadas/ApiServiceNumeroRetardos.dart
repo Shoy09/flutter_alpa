@@ -41,11 +41,11 @@ class ApiServiceNumeroRetardos {
   /// Guardar en SQLite (solo 1 registro, reemplaza el anterior)
   Future<void> saveToLocalDB(NumeroRetardos item) async {
     // 🔥 Limpiar tabla (porque solo quieres el último)
-    await _dbHelper.deleteAll('numero_retardos');
+    await _dbHelper.deleteAllShared('numero_retardos');
 
     Map<String, dynamic> data = item.toMap();
     data.remove('id'); // opcional si usas autoincrement local
 
-    await _dbHelper.insert('numero_retardos', data);
+    await _dbHelper.insertShared('numero_retardos', data);
   }
 }

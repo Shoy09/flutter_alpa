@@ -24,7 +24,7 @@ class ApiServicePlanMensual {
             .toList();
 
         // Eliminar los datos antiguos antes de insertar los nuevos
-        await _dbHelper.deleteAll('PlanMensual');
+        await _dbHelper.deleteAllShared('PlanMensual');
 
         // Guardar los datos en la base de datos local
         await savePlanesToLocalDB(planes);
@@ -43,7 +43,7 @@ class ApiServicePlanMensual {
     for (var plan in planes) {
       Map<String, dynamic> planData = plan.toMap();
       planData.remove('id'); // Asegurar que no se inserte el id para evitar conflictos
-      await _dbHelper.insert('PlanMensual', planData);
+      await _dbHelper.insertShared('PlanMensual', planData);
     }
   }
 }

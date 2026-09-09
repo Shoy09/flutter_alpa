@@ -24,7 +24,7 @@ class ApiServiceTipoPerforacion {
             .toList();
 
         // Eliminar los datos antiguos antes de insertar los nuevos
-        await _dbHelper.deleteAll('TipoPerforacion');
+        await _dbHelper.deleteAllShared('TipoPerforacion');
 
         // Guardar los datos en la base de datos local
         await saveTiposToLocalDB(tiposPerforacion);
@@ -43,7 +43,7 @@ class ApiServiceTipoPerforacion {
     for (var tipo in tiposPerforacion) {
       Map<String, dynamic> tipoData = tipo.toMap();
       tipoData.remove('id'); // Asegurar que no se inserte el id para evitar conflictos
-      await _dbHelper.insert('TipoPerforacion', tipoData);
+      await _dbHelper.insertShared('TipoPerforacion', tipoData);
     }
   }
 }

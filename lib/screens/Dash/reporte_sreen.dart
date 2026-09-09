@@ -12,6 +12,7 @@ import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/ServiciosAuxil
 import 'package:i_miner/screens/Operaciones/Tal%20horizontal/lista_perforacion_sreen.dart';
 import 'package:i_miner/screens/Operaciones/Volquetes/lista_perforacion_sreen.dart';
 import 'package:i_miner/screens/Operaciones/explosivos/prueba.dart';
+import 'package:i_miner/screens/Operaciones/pdf/pdf_folder_screen.dart';
 import 'package:i_miner/screens/Operaciones/sostenimiento/lista_perforacion_sreen.dart';
 import 'package:i_miner/screens/widgets/ReportButton.dart';
 import 'package:i_miner/screens/Operaciones/Tal%20largo/lista_perforacion_sreen.dart';
@@ -364,6 +365,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         {'title': 'ACARREO', 'image': 'assets/images/acarreo.png'},
       if (estaAutorizadoPara('MEDICIONES'))
         {'title': 'MEDICIONES', 'image': 'assets/images/medicion.png'},
+        {
+    'title': 'DOCUMENTOS',
+    'image': 'assets/images/pdf-removebg-preview.png',
+  },
     ];
 
     for (var module in modules) {
@@ -417,6 +422,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             rolUsuario: '$rol',
             dniUsuario: '${widget.dni}',
           ),
+        ),
+      );
+      break;
+
+
+            case 'DOCUMENTOS':
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PdfFolderScreen(),
         ),
       );
       break;
@@ -557,6 +572,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   "Guardias": true,
   "Materiales": true,
   "Empresas": true,
+  "Documentos": true,
+  "Operadores": true,
+  "Usuarios": true,
+  "Tipo Labor": true,
   };
 
   // Mostrar diálogo de selección mejorado

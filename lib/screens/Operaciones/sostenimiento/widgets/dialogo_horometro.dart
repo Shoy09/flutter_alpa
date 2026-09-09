@@ -65,14 +65,14 @@ class _DialogoHorometroState extends State<DialogoHorometro> {
           'EstaOP': widget.horometrosData['percusion']?['op'] == true ? 1 : 0,
           'EstaINOP': widget.horometrosData['percusion']?['inop'] == true ? 1 : 0,
         },
-        {
-          'id': 4,
-          'nombre': 'Empernador',
-          'inicial': widget.horometrosData['empernador']?['inicio'] ?? 0,
-          'final': widget.horometrosData['empernador']?['final'] ?? 0,
-          'EstaOP': widget.horometrosData['empernador']?['op'] == true ? 1 : 0,
-          'EstaINOP': widget.horometrosData['empernador']?['inop'] == true ? 1 : 0,
-        },
+        // {
+        //   'id': 4,
+        //   'nombre': 'Empernador',
+        //   'inicial': widget.horometrosData['empernador']?['inicio'] ?? 0,
+        //   'final': widget.horometrosData['empernador']?['final'] ?? 0,
+        //   'EstaOP': widget.horometrosData['empernador']?['op'] == true ? 1 : 0,
+        //   'EstaINOP': widget.horometrosData['empernador']?['inop'] == true ? 1 : 0,
+        // },
       ];
       
       // Inicializar controladores
@@ -206,12 +206,12 @@ class _DialogoHorometroState extends State<DialogoHorometro> {
         'op': horometros[2]['EstaOP'] == 1,
         'inop': horometros[2]['EstaINOP'] == 1,
       },
-      'empernador': {
-        'inicio': horometros[3]['inicial'] ?? 0,
-        'final': horometros[3]['final'] ?? 0,
-        'op': horometros[3]['EstaOP'] == 1,
-        'inop': horometros[3]['EstaINOP'] == 1,
-      },
+      // 'empernador': {
+      //   'inicio': horometros[3]['inicial'] ?? 0,
+      //   'final': horometros[3]['final'] ?? 0,
+      //   'op': horometros[3]['EstaOP'] == 1,
+      //   'inop': horometros[3]['EstaINOP'] == 1,
+      // },
     };
 
     // Guardar en la base de datos
