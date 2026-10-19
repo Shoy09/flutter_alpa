@@ -1,19 +1,14 @@
 // screens/pdf_detail_screen.dart
-import 'dart:io';
+import 'pdf_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:i_miner/models/CarpetaModel.dart';
 import 'package:i_miner/models/PdfModel.dart';
-import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 class PdfDetailScreen extends StatelessWidget {
   final CarpetaModel carpeta;
   final List<PdfModel> pdfs;
 
-  const PdfDetailScreen({
-    super.key,
-    required this.carpeta,
-    required this.pdfs,
-  });
+  const PdfDetailScreen({super.key, required this.carpeta, required this.pdfs});
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +120,7 @@ class PdfDetailScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1B5E6B).withOpacity(0.06),
+                  color: const Color(0xFF1B5E6B).withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Icon(
@@ -153,11 +148,18 @@ class PdfDetailScreen extends StatelessWidget {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Icon(Icons.folder_outlined, size: 11, color: Colors.grey[500]),
+                        Icon(
+                          Icons.folder_outlined,
+                          size: 11,
+                          color: Colors.grey[500],
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           carpeta.nombre,
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -168,9 +170,12 @@ class PdfDetailScreen extends StatelessWidget {
               ),
               // Botón ver
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1B5E6B).withOpacity(0.06),
+                  color: const Color(0xFF1B5E6B).withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
@@ -203,85 +208,7 @@ class PdfDetailScreen extends StatelessWidget {
   }
 
   void _openPdf(BuildContext context, PdfModel pdf) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.picture_as_pdf, color: Color(0xFF1B5E6B)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  pdf.nombre,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: screenWidth * 0.9,
-            height: screenHeight * 0.7,
-            child: File(pdf.urlPdf).existsSync()
-                ? SfPdfViewer.file(File(pdf.urlPdf))
-                : _buildErrorContent(pdf),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                'Cerrar',
-                style: TextStyle(
-                  color: Color(0xFF1B5E6B),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildErrorContent(PdfModel pdf) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
-        const SizedBox(height: 16),
-        const Text(
-          'No se pudo cargar el PDF',
-          style: TextStyle(
-            color: Color(0xFF1B5E6B),
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            children: [
-              _buildInfoRow('Nombre', pdf.nombre),
-              const SizedBox(height: 4),
-              _buildInfoRow('Carpeta', carpeta.nombre),
-            ],
-          ),
-        ),
-      ],
-    );
+    showPdfDialog(context, titulo: pdf.nombre, urlPdfLocal: pdf.urlPdf);
   }
 
   // ESTADO VACÍO

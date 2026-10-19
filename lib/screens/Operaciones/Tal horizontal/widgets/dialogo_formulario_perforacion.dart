@@ -91,6 +91,24 @@ class _DialogoFormularioPerforacionState
   return !codigosOmitir.contains(codigoStr);
 }
 
+// 🔥 Códigos donde la labor es OBLIGATORIA
+bool get _laborEsObligatoria {
+  final codigosObligatorio = ['101', '102']; // ajusta según necesites
+  return codigosObligatorio.contains(widget.codigo.toString());
+}
+
+// 🔥 Validación del botón Guardar
+bool get _puedeGuardar {
+  // Si la labor NO es obligatoria, siempre se puede guardar
+  if (!_laborEsObligatoria) return true;
+
+  // Si SÍ es obligatoria, validar que haya labor
+  final laborTexto = ubicacionController.text.trim();
+  return (laborSeleccionado != null &&
+          laborSeleccionado!.trim().isNotEmpty) ||
+      laborTexto.isNotEmpty;
+}
+
 
   Future<void> _cargarDatosDesdeBD() async {
     setState(() => isLoading = true);
@@ -248,17 +266,20 @@ class _DialogoFormularioPerforacionState
   }
 
 Future<void> _guardarDatos() async {
-
-  // 🔥 CAMBIO IMPORTANTE: Permitir texto libre si no hay selección
   String laborFinal = laborSeleccionado ?? '';
-  
-  // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
+
   if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
     laborFinal = ubicacionController.text.trim();
   }
 
+  // 🔥 Solo validar si la labor es obligatoria para este código
+  if (_laborEsObligatoria && laborFinal.isEmpty) {
+    _mostrarSnackbar('Debe ingresar una labor', Colors.orange);
+    return;
+  }
+
   Map<String, dynamic> datosFormulario = {
-    'labor': laborFinal,  // Usar el texto final (sea seleccionado o escrito)
+    'labor': laborFinal, // puede quedar vacío si no es obligatoria
     'tal_prod': talProdController.text,
     'tal_rimados': talRimadosController.text,
     'tal_alivio': talAlivioController.text,
@@ -273,6 +294,8 @@ Future<void> _guardarDatos() async {
   _mostrarSnackbar('Formulario guardado correctamente', Colors.green);
   Navigator.pop(context);
 }
+
+
   int? _obtenerIdTipoPerforacion(String? nombre) {
     if (nombre == null) return null;
     try {
@@ -951,24 +974,37 @@ Future<void> _guardarDatos() async {
           ),
           const SizedBox(width: 8),
           if (isEditable)
-            ElevatedButton(
-              onPressed: _guardarDatos,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: widget.primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                minimumSize: Size.zero,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.save, size: isSmallScreen ? 11 : 12),
-                  const SizedBox(width: 4),
-                  Text('Guardar', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600)),
-                ],
-              ),
+  Tooltip(
+    message: _puedeGuardar
+        ? 'Guardar datos'
+        : 'Ingrese una labor para poder guardar',
+    child: ElevatedButton(
+      onPressed: _puedeGuardar ? _guardarDatos : null,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: widget.primaryColor,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.grey.shade300,
+        disabledForegroundColor: Colors.grey.shade600,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        minimumSize: Size.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.save, size: isSmallScreen ? 11 : 12),
+          const SizedBox(width: 4),
+          Text(
+            'Guardar',
+            style: TextStyle(
+              fontSize: isSmallScreen ? 11 : 12,
+              fontWeight: FontWeight.w600,
             ),
+          ),
+        ],
+      ),
+    ),
+  ),
         ],
       ),
     );

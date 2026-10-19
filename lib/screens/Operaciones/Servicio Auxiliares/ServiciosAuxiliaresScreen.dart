@@ -126,27 +126,27 @@ class ServiciosAuxiliaresScreen extends StatelessWidget {
                         //     },
                         //   ),
                         // ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: CorporateButton(
-                            title: 'ANFOCHARGER',
-                            subtitle: 'Gestión de carga',
-                            icon: Icons.construction,
-                            backgroundColor: primaryColor,
-                            accentColor: accentColor,
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => TaladroAnfoChangerScreen(
-                                    rolUsuario: rolUsuario,
-                                    dniUsuario: dniUsuario,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
+                        // SizedBox(
+                        //   width: itemWidth,
+                        //   child: CorporateButton(
+                        //     title: 'ANFOCHARGER',
+                        //     subtitle: 'Gestión de carga',
+                        //     icon: Icons.construction,
+                        //     backgroundColor: primaryColor,
+                        //     accentColor: accentColor,
+                        //     onPressed: () {
+                        //       Navigator.push(
+                        //         context,
+                        //         MaterialPageRoute(
+                        //           builder: (_) => TaladroAnfoChangerScreen(
+                        //             rolUsuario: rolUsuario,
+                        //             dniUsuario: dniUsuario,
+                        //           ),
+                        //         ),
+                        //       );
+                        //     },
+                        //   ),
+                        // ),
                         SizedBox(
                           width: itemWidth,
                           child: CorporateButton(

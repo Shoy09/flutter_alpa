@@ -1,8 +1,9 @@
+import 'package:i_miner/models/checklist_respuesta.dart';
+import 'package:i_miner/screens/checklist/checklist_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/AnfoChanger/widgets/dialog_check_imagen.dart';
-import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/AnfoChanger/widgets/dialogo_checklist.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/AnfoChanger/widgets/dialogo_condiciones_equipo.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/AnfoChanger/widgets/dialogo_confirmar_cierre.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/AnfoChanger/widgets/dialogo_formulario_perforacion.dart';
@@ -885,16 +886,10 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
 
   /// Obtener checklist del proceso correcto
   List<Map<String, dynamic>> checklistItems =
-      await dbHelper.getCheckListByProceso('ANFOCHANGER');
+      await dbHelper.getCheckListByProceso('ANFOCHANGER', codigoEquipo: data['n_equipo']?.toString());
 
-  List<Map<String, dynamic>> checkListJson = checklistItems.map((item) {
-    return {
-      'descripcion': item['nombre'],
-      'decision': 0,
-      'observacion': '',
-      'categoria': item['categoria'],
-    };
-  }).toList();
+  final checkListJson = checklistItems
+      .map((item) => ChecklistRespuesta.desdeCatalogo(item).toMap()).toList();
 
   /// Insertar operación
   await dbHelper.insertOperacionAnfochanger(
@@ -1063,17 +1058,15 @@ void _handleChecklist() async {
   List<Map<String, dynamic>> checklistData = await DatabaseHelper()
       .getCheckListByOperacionIdAnfochanger(operacionId);
 
-  showDialog(
-    context: context,
-    builder: (Buildertontext) {
-      return DialogoChecklist(
-        operacionId: operacionId,
-        estado: estado,
-        checklistData: checklistData, // ✅ pasamos los datos cargados
-        primaryColor: primaryColor,
-      );
-    },
+  if (!mounted) return;
+  final guardado = await ChecklistScreen.show(
+    context,
+    checklistData: checklistData,
+    equipo: operacionActual['n_equipo']?.toString() ?? operacionActual['equipo']?.toString() ?? 'Equipo',
+    editable: estado.toLowerCase() != 'cerrado',
+    onGuardar: (respuestas) => DatabaseHelper().updateCheckListAnfochanger(operacionId, respuestas),
   );
+  if (guardado == true && mounted) await _fetchOperacionData();
 }
 
 void _handleHorometro() async {

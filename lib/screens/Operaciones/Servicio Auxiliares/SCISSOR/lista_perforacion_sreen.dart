@@ -1,8 +1,9 @@
+import 'package:i_miner/models/checklist_respuesta.dart';
+import 'package:i_miner/screens/checklist/checklist_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/SCISSOR/widgets/dialog_check_imagen.dart';
-import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/SCISSOR/widgets/dialogo_checklist.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/SCISSOR/widgets/dialogo_condiciones_equipo.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/SCISSOR/widgets/dialogo_confirmar_cierre.dart';
 import 'package:i_miner/screens/Operaciones/Servicio%20Auxiliares/SCISSOR/widgets/dialogo_formulario_perforacion.dart';
@@ -886,16 +887,10 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
   }
 
   List<Map<String, dynamic>> checklistItems =
-      await DatabaseHelper().getCheckListByProceso('SCISSOR');
+      await DatabaseHelper().getCheckListByProceso('SCISSOR', codigoEquipo: data['n_equipo']?.toString());
 
-  List<Map<String, dynamic>> checkListJson = checklistItems.map((item) {
-    return {
-      'descripcion': item['nombre'],
-      'decision': 0,
-      'observacion': '',
-      'categoria': item['categoria'],
-    };
-  }).toList();
+  final checkListJson = checklistItems
+      .map((item) => ChecklistRespuesta.desdeCatalogo(item).toMap()).toList();
 
   /// Insertar operación
   await dbHelper.insertOperacionScissor(
@@ -905,6 +900,7 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
     data['jefe_guardia'],
     data['equipo'],
     data['n_equipo'],
+    data['guardia'], 
     checkListJson: checkListJson,
     horometrosBase: horometros,
   );
@@ -1064,17 +1060,15 @@ void _handleChecklist() async {
   List<Map<String, dynamic>> checklistData = await DatabaseHelper()
       .getCheckListByOperacionIdScissor(operacionId);
 
-  showDialog(
-    context: context,
-    builder: (Buildertontext) {
-      return DialogoChecklist(
-        operacionId: operacionId,
-        estado: estado,
-        checklistData: checklistData, // ✅ pasamos los datos cargados
-        primaryColor: primaryColor,
-      );
-    },
+  if (!mounted) return;
+  final guardado = await ChecklistScreen.show(
+    context,
+    checklistData: checklistData,
+    equipo: operacionActual['n_equipo']?.toString() ?? operacionActual['equipo']?.toString() ?? 'Equipo',
+    editable: estado.toLowerCase() != 'cerrado',
+    onGuardar: (respuestas) => DatabaseHelper().updateCheckListScissor(operacionId, respuestas),
   );
+  if (guardado == true && mounted) await _fetchOperacionData();
 }
 
 void _handleHorometro() async {
@@ -1172,7 +1166,7 @@ void _handleCerrarRegistros() {
                 : 1;
 
             String horaReservaFinal =
-                (selectedTurno == 'DÍA') ? '19:00' : '07:00';
+                (selectedTurno == 'DÍA') ? '18:30' : '06:30';
 
             await DatabaseHelper().createReservaEstadoScissor(
               operacionActual!['id'],

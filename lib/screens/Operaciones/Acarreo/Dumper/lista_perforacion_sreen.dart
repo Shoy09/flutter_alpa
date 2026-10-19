@@ -1,10 +1,11 @@
+import 'package:i_miner/models/checklist_respuesta.dart';
+import 'package:i_miner/screens/checklist/checklist_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/DialogoChecklistTelemando.dart';
 import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/DialogoProgramaTrabajo.dart';
 import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/dialog_check_imagen.dart';
-import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/dialogo_checklist.dart';
 import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/dialogo_condiciones_equipo.dart';
 import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/dialogo_confirmar_cierre.dart';
 import 'package:i_miner/screens/Operaciones/Acarreo/Dumper/widgets/dialogo_formulario_perforacion.dart';
@@ -888,16 +889,10 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
 
   /// Checklist normal (DUMPER)
   List<Map<String, dynamic>> checklistItems =
-      await DatabaseHelper().getCheckListByProceso('DUMPER');
+      await DatabaseHelper().getCheckListByProceso('DUMPER', codigoEquipo: data['n_equipo']?.toString());
 
-  List<Map<String, dynamic>> checkListJson = checklistItems.map((item) {
-    return {
-      'descripcion': item['nombre'],
-      'decision': 0,
-      'observacion': '',
-      'categoria': item['categoria'],
-    };
-  }).toList();
+  final checkListJson = checklistItems
+      .map((item) => ChecklistRespuesta.desdeCatalogo(item).toMap()).toList();
 
   /// ✅ Checklist telemando
   List<Map<String, dynamic>> checklistTelemandoItems =
@@ -1083,17 +1078,15 @@ void _handleChecklist() async {
   List<Map<String, dynamic>> checklistData = await DatabaseHelper()
       .getCheckListByOperacionIdDumper(operacionId);
 
-  showDialog(
-    context: context,
-    builder: (Buildertontext) {
-      return DialogoChecklist(
-        operacionId: operacionId,
-        estado: estado,
-        checklistData: checklistData, // ✅ pasamos los datos cargados
-        primaryColor: primaryColor,
-      );
-    },
+  if (!mounted) return;
+  final guardado = await ChecklistScreen.show(
+    context,
+    checklistData: checklistData,
+    equipo: operacionActual['n_equipo']?.toString() ?? operacionActual['equipo']?.toString() ?? 'Equipo',
+    editable: estado.toLowerCase() != 'cerrado',
+    onGuardar: (respuestas) => DatabaseHelper().updateCheckListDumper(operacionId, respuestas),
   );
+  if (guardado == true && mounted) await _fetchOperacionData();
 }
 
 void _handleChecklistTelemando() async {

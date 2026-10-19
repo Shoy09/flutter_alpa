@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:i_miner/screens/checklist/checklist_screen.dart';
 
 import 'package:flutter/material.dart';
 import 'package:i_miner/config/data/database_helper.dart';
@@ -101,6 +102,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: navbarColor,
         foregroundColor: Colors.white,
         actions: [
+          // IconButton(
+          //   tooltip: 'Checklist de equipos (demo)',
+          //   icon: const Icon(Icons.fact_check_outlined),
+          //   onPressed: () => ChecklistScreen.show(context),
+          // ),
           // Botón de upload
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -559,7 +565,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     "Plan Metraje": true,
     "Plan Producción": true,
     "Jefes Guardia": true,
-    "Checklist Carguio": true,
+    // "Checklist Carguio": true,
     "Longitud Barras": true,
   "Pernos": true,
   "Mallas": true,

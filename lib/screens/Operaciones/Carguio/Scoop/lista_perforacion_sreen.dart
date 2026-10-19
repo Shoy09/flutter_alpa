@@ -1,10 +1,11 @@
+import 'package:i_miner/models/checklist_respuesta.dart';
+import 'package:i_miner/screens/checklist/checklist_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/DialogoChecklistTelemando.dart';
 import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/DialogoProgramaTrabajo.dart';
 import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/dialog_check_imagen.dart';
-import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/dialogo_checklist.dart';
 import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/dialogo_condiciones_equipo.dart';
 import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/dialogo_confirmar_cierre.dart';
 import 'package:i_miner/screens/Operaciones/Carguio/Scoop/widgets/dialogo_formulario_perforacion.dart';
@@ -816,6 +817,7 @@ Future<void> _abrirDialogoOperativoCarguio(int estadoId, String codigo) async {
 
   showDialog(
     context: context,
+    barrierDismissible: false,
     builder: (BuildContext context) {
       return DialogoFormularioPerforacion(
         operacionId: operacionActual!['id'],
@@ -907,16 +909,10 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
 
   /// Checklist normal (SCOOPTRAM)
   List<Map<String, dynamic>> checklistItems =
-      await DatabaseHelper().getCheckListByProceso('SCOOPTRAM');
+      await DatabaseHelper().getCheckListByProceso('SCOOPTRAM', codigoEquipo: data['n_equipo']?.toString());
 
-  List<Map<String, dynamic>> checkListJson = checklistItems.map((item) {
-    return {
-      'descripcion': item['nombre'],
-      'decision': 0,
-      'observacion': '',
-      'categoria': item['categoria'],
-    };
-  }).toList();
+  final checkListJson = checklistItems
+      .map((item) => ChecklistRespuesta.desdeCatalogo(item).toMap()).toList();
 
   /// ✅ Checklist telemando
   List<Map<String, dynamic>> checklistTelemandoItems =
@@ -986,6 +982,7 @@ Future<void> _editarOperacionOperativoCarguio(
 
   showDialog(
     context: context,
+    barrierDismissible: false,
     builder: (BuildContext context) {
       return DialogoFormularioPerforacion(
         operacionId: operacionActual!['id'],
@@ -1103,17 +1100,15 @@ void _handleChecklist() async {
   List<Map<String, dynamic>> checklistData = await DatabaseHelper()
       .getCheckListByOperacionIdCarguio(operacionId);
 
-  showDialog(
-    context: context,
-    builder: (Buildertontext) {
-      return DialogoChecklist(
-        operacionId: operacionId,
-        estado: estado,
-        checklistData: checklistData, // ✅ pasamos los datos cargados
-        primaryColor: primaryColor,
-      );
-    },
+  if (!mounted) return;
+  final guardado = await ChecklistScreen.show(
+    context,
+    checklistData: checklistData,
+    equipo: operacionActual['n_equipo']?.toString() ?? operacionActual['equipo']?.toString() ?? 'Equipo',
+    editable: estado.toLowerCase() != 'cerrado',
+    onGuardar: (respuestas) => DatabaseHelper().updateCheckListCarguio(operacionId, respuestas),
   );
+  if (guardado == true && mounted) await _fetchOperacionData();
 }
 
 void _handleChecklistTelemando() async {
@@ -1233,15 +1228,85 @@ void _handleCerrarRegistros() {
       return DialogoConfirmarCierreRegistros(
         primaryColor: primaryColor,
         onConfirmar: () async {
+          // ❌ NO cerrar aquí el diálogo todavía
 
-          // cerrar dialog
-          Navigator.pop(dialogContext);
-
-          // mostrar loader usando context correcto
+          // 🔥 1. VALIDAR HORÓMETROS
           showDialog(
             context: parentContext,
             barrierDismissible: false,
-            builder: (context) => const Center(
+            builder: (_) => const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+
+          List<Map<String, String>> horometrosConError = [];
+          try {
+            horometrosConError = await DatabaseHelper()
+                .getHorometrosConErrorCarguio(operacionActual!['id']);
+          } catch (e) {
+            Navigator.pop(parentContext); // quitar loader
+            // ⚠️ NO cerramos dialogContext — se queda abierto
+            _mostrarSnackBar(
+              'Error al validar horómetros: $e',
+              Colors.red,
+            );
+            return;
+          }
+
+          Navigator.pop(parentContext); // quitar loader
+
+          // 🔥 Si hay errores → alerta detallada y NO cerrar
+          if (horometrosConError.isNotEmpty) {
+            final lista = horometrosConError.map((h) {
+              final tipo = h['tipo'] ?? '';
+              final tipoCap = tipo.isEmpty
+                  ? ''
+                  : '${tipo[0].toUpperCase()}${tipo.substring(1)}';
+              return '• $tipoCap: ${h['motivo']}';
+            }).join('\n');
+
+            showDialog(
+              context: parentContext,
+              builder: (_) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: Colors.red.shade400, size: 22),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Horómetros incompletos',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                content: SingleChildScrollView(
+                  child: Text(
+                    'No se puede cerrar el registro.\n\n'
+                    'Revisa los siguientes horómetros:\n$lista',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(parentContext),
+                    child: const Text('Entendido'),
+                  ),
+                ],
+              ),
+            );
+            // ❌ NO cerramos dialogContext → la confirmación sigue abierta
+            return;
+          }
+
+          // 🔥 2. FLUJO NORMAL DE CIERRE
+          showDialog(
+            context: parentContext,
+            barrierDismissible: false,
+            builder: (_) => const Center(
               child: CircularProgressIndicator(),
             ),
           );
@@ -1252,6 +1317,7 @@ void _handleCerrarRegistros() {
 
             if (ultimoEstado == null) {
               Navigator.pop(parentContext);
+              // ⚠️ NO cerramos dialogContext — se queda abierto
               _mostrarSnackBar(
                 'No se puede cerrar: No hay estados registrados',
                 Colors.red,
@@ -1259,10 +1325,10 @@ void _handleCerrarRegistros() {
               return;
             }
 
-            String horaReservaInicio =
-                (selectedTurno == 'DÍA') ? '17:00' : '05:00';
+            String horaReservaInicio = (selectedTurno == 'DÍA') ? '17:30' : '05:30';
 
-            bool actualizado = await DatabaseHelper().updateHoraFinalCarguio(
+            bool actualizado =
+                await DatabaseHelper().updateHoraFinalCarguio(
               operacionActual!['id'],
               ultimoEstado['id'],
               horaReservaInicio,
@@ -1290,9 +1356,14 @@ void _handleCerrarRegistros() {
               horaReservaFinal,
             );
 
-            await DatabaseHelper().cerrarOperacionCarguio(operacionActual!['id']);
+            await DatabaseHelper()
+                .cerrarOperacionCarguio(operacionActual!['id']);
 
-            if (mounted) Navigator.pop(parentContext);
+            // ✅ AHORA SÍ cerramos ambos diálogos porque todo salió bien
+            if (mounted) {
+              Navigator.pop(parentContext); // quita loader
+              Navigator.pop(dialogContext); // cierra confirmación
+            }
 
             _mostrarSnackBar(
               'Registro cerrado exitosamente. Se agregó estado RESERVA',
@@ -1300,10 +1371,9 @@ void _handleCerrarRegistros() {
             );
 
             await _fetchOperacionData();
-
           } catch (e) {
-            if (mounted) Navigator.pop(parentContext);
-
+            if (mounted) Navigator.pop(parentContext); // quita loader
+            // ⚠️ NO cerramos dialogContext — se queda abierto
             _mostrarSnackBar('Error al cerrar registro: $e', Colors.red);
           }
         },

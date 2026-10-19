@@ -7,7 +7,7 @@ import 'package:i_miner/screens/widgets/envio%20nube/empty_state.dart';
 import 'package:i_miner/screens/widgets/envio%20nube/exito_dialog.dart';
 import 'package:i_miner/screens/widgets/envio%20nube/loading_state.dart';
 import 'package:i_miner/services/envio%20nube/largo/exportar_service.dart';
-import 'package:i_miner/services/envio%20nube/operaciones_service.dart';
+import 'package:i_miner/screens/Envio%20a%20nube/manual_operation_sync.dart';
 
 import '../../widgets/envio nube/operacion_card.dart';
 
@@ -47,14 +47,16 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
       List<Map<String, dynamic>> data = await _dbHelper
           .getOperacionesTaladroLargo();
 
+      if (!mounted) return;
       setState(() {
         operacionData = data;
         isLoading = false;
-        mensajeUsuario = data.isEmpty 
+        mensajeUsuario = data.isEmpty
             ? "No se encontraron registros para ${widget.tipoOperacion}"
             : "Datos cargados correctamente";
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         mensajeUsuario = "Error al cargar datos";
         isLoading = false;
@@ -64,32 +66,33 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
   }
 
   void _handleItemTap(int id) {
-  final item = operacionData.firstWhere((e) => e['id'] == id);
+    final item = operacionData.firstWhere((e) => e['id'] == id);
 
-  // 🚫 BLOQUEO SI YA FUE ENVIADO
-  if (item['envio'] == 1) {
-    _mostrarAdvertencia(
-      'Registro ya enviado',
-      'Este registro ya fue enviado y no se puede seleccionar nuevamente.',
-    );
-    return;
-  }
-
-  setState(() {
-    if (selectedItems.contains(id)) {
-      selectedItems.remove(id);
-    } else {
-      selectedItems.add(id);
+    // 🚫 BLOQUEO SI YA FUE ENVIADO
+    if (item['envio'] == 1) {
+      _mostrarAdvertencia(
+        'Registro ya enviado',
+        'Este registro ya fue enviado y no se puede seleccionar nuevamente.',
+      );
+      return;
     }
-  });
-}
+
+    setState(() {
+      if (selectedItems.contains(id)) {
+        selectedItems.remove(id);
+      } else {
+        selectedItems.add(id);
+      }
+    });
+  }
 
   void _confirmarEliminacion() {
     showDialog(
       context: context,
       builder: (context) => ConfirmacionDialog(
         titulo: 'Eliminar registros',
-        mensaje: '¿Estás seguro de eliminar ${selectedItems.length} registro(s)?\nEsta acción no se puede deshacer.',
+        mensaje:
+            '¿Estás seguro de eliminar ${selectedItems.length} registro(s)?\nEsta acción no se puede deshacer.',
         textoConfirmar: 'Eliminar',
         confirmColor: Colors.red,
         onConfirmar: _eliminarRegistrosSeleccionados,
@@ -103,7 +106,8 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const CargaDialog(mensaje: 'Eliminando registros...'),
+      builder: (context) =>
+          const CargaDialog(mensaje: 'Eliminando registros...'),
     );
 
     try {
@@ -153,11 +157,12 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
 
       bool? confirmado = await showDialog<bool>(
         context: context,
-        builder: (context) => _buildJsonPreviewDialog(jsonString, jsonDataList.length),
+        builder: (context) =>
+            _buildJsonPreviewDialog(jsonString, jsonDataList.length),
       );
 
       if (confirmado == true) {
-         await _enviarDatosALaNube(jsonDataList);
+        await _enviarDatosALaNube(jsonDataList);
       }
     } catch (e) {
       Navigator.pop(context); // Cierra loading
@@ -210,45 +215,45 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
               ),
             ),
             Expanded(
-  child: Padding(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      children: [
-        Text(
-          'Se enviarán $cantidad operaciones a la nube',
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 16),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Text(
+                      'Se enviarán $cantidad operaciones a la nube',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
 
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  jsonString,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                  ),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              jsonString,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ),
-      ],
-    ),
-  ),
-),
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -272,7 +277,10 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.primaryColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                     ),
                     child: const Text('Enviar a la nube'),
                   ),
@@ -285,188 +293,18 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
     );
   }
 
-Future<void> _enviarDatosALaNube(
-  List<Map<String, dynamic>> jsonData,
-) async {
-  final operacionService = OperacionesService();
-
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => const CargaDialog(
-      mensaje: 'Enviando a la nube...',
-    ),
-  );
-
-  try {
-
-    final List<Map<String, dynamic>> registrosParaCrear = [];
-    final List<Map<String, dynamic>> registrosParaActualizar = [];
-
-    for (var item in jsonData) {
-      final int idNube = item['idNube'] ?? 0;
-      final double envio = (item['envio'] ?? 0).toDouble();
-
-      if (idNube == 0 || envio == 0) {
-        registrosParaCrear.add(item);
-      } else if (idNube > 0 && envio == 0.5) {
-        registrosParaActualizar.add(item);
-      }
-    }
-
-    int totalEnviados = 0;
-    int totalActualizados = 0;
-
-    // =====================
-    // CREAR
-    // =====================
-    if (registrosParaCrear.isNotEmpty) {
-
-      final dataParaEnviar = registrosParaCrear.map((item) {
-        final copia = Map<String, dynamic>.from(item);
-        copia.remove('local_id');
-        return copia;
-      }).toList();
-
-      final resultados = await operacionService.crearParciales(
-        'tal_largo',
-        dataParaEnviar,
-      );
-
-      if (resultados != null) {
-
-        for (int i = 0; i < resultados.length; i++) {
-  final resultado = resultados[i];
-  final registroLocal = registrosParaCrear[i];
-
-  final int localId = registroLocal['local_id'];
-  final int serverId = resultado['server_id'];
-
-  final String estado = (registroLocal['estado'] ?? '')
-      .toString()
-      .toLowerCase();
-
-  double envio = 0.5;
-
-  if (estado == 'cerrado') {
-    envio = 1;
-  }
-
-  await _dbHelper.actualizarIdNube(
-    'Operacion_tal_largo',
-    localId,
-    serverId,
-  );
-
-  await _dbHelper.actualizarEnvio(
-    localId,
-    envio,
-  );
-
-  totalEnviados++;
-}
-
-      } else {
-        throw Exception('Error al crear registros');
-      }
-    }
-
-    // =====================
-    // ACTUALIZAR
-    // =====================
-    if (registrosParaActualizar.isNotEmpty) {
-
-      final datosParaActualizar =
-          registrosParaActualizar.map((item) {
-
-        final copia = Map<String, dynamic>.from(item);
-
-        copia['id'] = copia['idNube'];
-
-        return copia;
-
-      }).toList();
-
-      final actualizacionExitosa =
-          await operacionService.actualizarMasivo(
-        'tal_largo',
-        datosParaActualizar,
-      );
-
-      if (actualizacionExitosa) {
-
-        for (var registro in registrosParaActualizar) {
-
-          final int localId = registro['local_id'];
-
-          final String estado =
-              (registro['estado'] ?? '')
-                  .toString()
-                  .toLowerCase();
-
-          double envio = 0.5;
-
-          if (estado == 'cerrado') {
-            envio = 1;
-          }
-
-          await _dbHelper.actualizarEnvio(
-            localId,
-            envio,
-          );
-
-          totalActualizados++;
-        }
-
-      } else {
-        throw Exception('Error al actualizar registros');
-      }
-    }
-
-    Navigator.pop(context);
-
-    await _fetchOperacionData();
-
-    setState(() {
-      selectedItems.clear();
-    });
-
-    String mensaje = '';
-
-    if (totalEnviados > 0 && totalActualizados > 0) {
-      mensaje =
-          'Se crearon $totalEnviados y se actualizaron $totalActualizados operaciones correctamente';
-    } else if (totalEnviados > 0) {
-      mensaje =
-          'Se crearon $totalEnviados operaciones correctamente';
-    } else if (totalActualizados > 0) {
-      mensaje =
-          'Se actualizaron $totalActualizados operaciones correctamente';
-    } else {
-      mensaje = 'No hay operaciones para enviar';
-    }
-
-    if (totalEnviados > 0 || totalActualizados > 0) {
-      showDialog(
-        context: context,
-        builder: (context) => ExitoDialog(
-          titulo: '¡Sincronización exitosa!',
-          mensaje: mensaje,
-        ),
-      );
-    }
-
-  } catch (e) {
-
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
-
-    _mostrarError(
-      'Error en envío: ${e.toString()}',
+  Future<void> _enviarDatosALaNube(List<Map<String, dynamic>> jsonData) async {
+    await sendManualOperations(
+      context,
+      type: 'tal_largo',
+      preview: jsonData,
+      refresh: () async {
+        if (!mounted) return;
+        await _fetchOperacionData();
+        if (mounted) setState(() => selectedItems.clear());
+      },
     );
   }
-}
 
   void _mostrarError(String mensaje) {
     showDialog(
@@ -517,12 +355,12 @@ Future<void> _enviarDatosALaNube(
             child: isLoading
                 ? const LoadingState()
                 : operacionData.isEmpty
-                    ? EmptyState(
-                        mensaje: mensajeUsuario,
-                        subtitulo: 'No hay registros disponibles',
-                        icono: Icons.inbox,
-                      )
-                    : _buildOperacionesList(),
+                ? EmptyState(
+                    mensaje: mensajeUsuario,
+                    subtitulo: 'No hay registros disponibles',
+                    icono: Icons.inbox,
+                  )
+                : _buildOperacionesList(),
           ),
         ],
       ),

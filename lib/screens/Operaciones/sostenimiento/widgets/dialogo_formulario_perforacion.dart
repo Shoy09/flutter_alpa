@@ -4,6 +4,61 @@ import 'package:i_miner/models/PlanMensual.dart';
 import 'package:i_miner/models/PlanProduccion.dart';
 import 'package:i_miner/models/PlanMetraje.dart';
 
+// ============================================================
+// MODELOS DE FILA
+// ============================================================
+class PernoFila {
+  String tipoPerno;
+  String longitud;
+  int nPernos;
+  String sistematico;
+
+  PernoFila({
+    required this.tipoPerno,
+    required this.longitud,
+    required this.nPernos,
+    required this.sistematico,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'tipo_pernos': tipoPerno,
+    'log_pernos': longitud,
+    'n_pernos_instalados': nPernos,
+    'sistematico_puntual': sistematico,
+  };
+}
+
+class MallaFila {
+  String tipoMalla;
+  String mt52;
+
+  MallaFila({
+    required this.tipoMalla,
+    required this.mt52,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'tipo_malla': tipoMalla,
+    'mt52_malla': mt52,
+  };
+}
+
+// 🔥 MODELO Perforación (sin tipoPerforacion — ahora va a nivel raíz)
+class PerforacionFila {
+  int nTaladros;
+  double longitudPerforacion;
+
+  PerforacionFila({
+    required this.nTaladros,
+    required this.longitudPerforacion,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'n_taladros': nTaladros,
+    'longitud_perforacion': longitudPerforacion,
+  };
+}
+
 class DialogoFormularioEmpernador extends StatefulWidget {
   final int operacionId;
   final int estadoId;
@@ -11,6 +66,7 @@ class DialogoFormularioEmpernador extends StatefulWidget {
   final String estado;
   final Color primaryColor;
   final Function(Map<String, dynamic>) onGuardar;
+  final String codigo;
 
   const DialogoFormularioEmpernador({
     Key? key,
@@ -20,6 +76,7 @@ class DialogoFormularioEmpernador extends StatefulWidget {
     required this.estado,
     this.primaryColor = const Color(0xFF1B5E6B),
     required this.onGuardar,
+    required this.codigo,
   }) : super(key: key);
 
   @override
@@ -32,38 +89,35 @@ class _DialogoFormularioEmpernadorState
   bool isEditable = false;
   bool isLoading = true;
   bool isSmallScreen = false;
+  List<String> opcionesTipoPerforacion = [];
 
-  // 🔥 NUEVO: Controlador para ubicación combinada
+  // 🔥 Tipo de perforación a nivel raíz
+  String? tipoPerforacionSeleccionado;
+
+  // Ubicación combinada
   final TextEditingController ubicacionController = TextEditingController();
   FocusNode ubicacionFocusNode = FocusNode();
   bool mostrarSugerencias = false;
-
-  // 🔥 NUEVO: Variable para la ubicación seleccionada (cadena combinada)
   String? laborSeleccionado;
 
-  // 🔥 NUEVO: Opciones combinadas para el buscador
   List<String> opcionesUbicacionCombinadas = [];
   List<String> opcionesUbicacionFiltradas = [];
 
-  // Controladores para los campos específicos de empernador
-  final TextEditingController nPernosInstaladosController =
-      TextEditingController();
-  final TextEditingController mt52MallaController = TextEditingController();
   final TextEditingController observacionesController = TextEditingController();
 
-  // Listas para pernos y mallas
+  // Catálogos de pernos
   List<Map<String, dynamic>> pernosCompletos = [];
   List<String> tiposPerno = [];
-  List<String> longitudesPerno = [];
 
-  String? tipoPernoSeleccionado;
-  String? longitudPernoSeleccionada;
-
+  // Catálogos de mallas
   List<String> opcionesMalla = [];
-  String? mallaSeleccionada;
 
-  String? sistematicoPuntualSeleccionado;
   List<String> opcionesSistematicoPuntual = ['Sistemático', 'Puntual'];
+
+  // Listas dinámicas
+  List<PernoFila> pernosFilas = [];
+  List<MallaFila> mallasFilas = [];
+  List<PerforacionFila> perforacionesFilas = [];
 
   @override
   void initState() {
@@ -71,6 +125,63 @@ class _DialogoFormularioEmpernadorState
     isEditable = widget.estado.toLowerCase() != "cerrado";
     _cargarDatosIniciales();
     _cargarDatosDesdeBD();
+    _cargarTiposPerforacion();
+  }
+
+  bool get _debeMostrarDatosPerforacion {
+    final codigosOmitir = ['103', '104', '105', '106'];
+    final codigoStr = widget.codigo.toString();
+    return !codigosOmitir.contains(codigoStr);
+  }
+
+  // 🔥 Códigos donde la labor es OBLIGATORIA
+  bool get _laborEsObligatoria {
+    final codigosObligatorio = ['101', '102'];
+    return codigosObligatorio.contains(widget.codigo.toString());
+  }
+
+  // 🔥 Validación del botón Guardar
+  bool get _puedeGuardar {
+    if (!_laborEsObligatoria) return true;
+
+    final laborTexto = ubicacionController.text.trim();
+    return (laborSeleccionado != null &&
+            laborSeleccionado!.trim().isNotEmpty) ||
+        laborTexto.isNotEmpty;
+  }
+
+  // 🔥 Para código 101, ocultar sección de Perforación
+  bool get _debeMostrarSeccionPerforacion {
+    final codigoStr = widget.codigo.toString();
+    return _debeMostrarDatosPerforacion && codigoStr != '101';
+  }
+
+  // 🔥 Para código 102, ocultar secciones de Pernos y Mallas
+  bool get _debeMostrarSeccionPernosMallas {
+    final codigoStr = widget.codigo.toString();
+    return _debeMostrarDatosPerforacion && codigoStr != '102';
+  }
+
+  Future<void> _cargarTiposPerforacion() async {
+    try {
+      final dbHelper = DatabaseHelper();
+      final tipos =
+          await dbHelper.getTiposPerforacionByProceso("EMPERNADOR");
+      final lista = tipos
+          .map((t) => t.nombre ?? '')
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      setState(() {
+        opcionesTipoPerforacion = lista;
+      });
+    } catch (e) {
+      print("Error cargando tipos perforación: $e");
+      setState(() {
+        opcionesTipoPerforacion = ['Perforación 1', 'Perforación 2'];
+      });
+    }
   }
 
   Future<void> _cargarDatosDesdeBD() async {
@@ -87,7 +198,6 @@ class _DialogoFormularioEmpernadorState
     }
   }
 
-  // 🔥 NUEVO: Cargar planes combinados (Mensual + Produccion + Metraje)
   Future<void> _cargarPlanesCombinados() async {
     try {
       final dbHelper = DatabaseHelper();
@@ -102,7 +212,6 @@ class _DialogoFormularioEmpernadorState
       final planesProduccion = results[1] as List<PlanProduccion>;
       final planesMetraje = results[2] as List<PlanMetraje>;
 
-      // Generar opciones combinadas para ubicación
       _generarOpcionesUbicacion(planesMensual, planesProduccion, planesMetraje);
     } catch (e) {
       print("Error cargando planes: $e");
@@ -117,7 +226,6 @@ class _DialogoFormularioEmpernadorState
     }
   }
 
-  // 🔥 NUEVO: Generar opciones combinadas
   void _generarOpcionesUbicacion(
     List<PlanMensual> planesMensual,
     List<PlanProduccion> planesProduccion,
@@ -125,33 +233,27 @@ class _DialogoFormularioEmpernadorState
   ) {
     Set<String> opcionesCombinadas = {};
 
-    // Combinar datos de PlanMensual
     for (var plan in planesMensual) {
       String combinado = '';
       if (plan.tipoLabor?.isNotEmpty ?? false) combinado += plan.tipoLabor!;
       if (plan.labor?.isNotEmpty ?? false) combinado += '_${plan.labor!}';
       if (plan.ala?.isNotEmpty ?? false) combinado += '_${plan.ala!}';
-
       if (combinado.isNotEmpty) opcionesCombinadas.add(combinado);
     }
 
-    // Combinar datos de PlanProduccion
     for (var plan in planesProduccion) {
       String combinado = '';
       if (plan.tipoLabor?.isNotEmpty ?? false) combinado += plan.tipoLabor!;
       if (plan.labor?.isNotEmpty ?? false) combinado += '_${plan.labor!}';
       if (plan.ala?.isNotEmpty ?? false) combinado += '_${plan.ala!}';
-
       if (combinado.isNotEmpty) opcionesCombinadas.add(combinado);
     }
 
-    // Combinar datos de PlanMetraje
     for (var plan in planesMetraje) {
       String combinado = '';
       if (plan.tipoLabor?.isNotEmpty ?? false) combinado += plan.tipoLabor!;
       if (plan.labor?.isNotEmpty ?? false) combinado += '_${plan.labor!}';
       if (plan.ala?.isNotEmpty ?? false) combinado += '_${plan.ala!}';
-
       if (combinado.isNotEmpty) opcionesCombinadas.add(combinado);
     }
 
@@ -161,7 +263,6 @@ class _DialogoFormularioEmpernadorState
     });
   }
 
-  // Cargar pernos desde la BD
   Future<void> _cargarPernos() async {
     try {
       final dbHelper = DatabaseHelper();
@@ -175,14 +276,11 @@ class _DialogoFormularioEmpernadorState
       setState(() {
         tiposPerno = tipos;
       });
-
-      _setLongitudesDesdeTipoInicial();
     } catch (e) {
       print("Error cargando pernos: $e");
     }
   }
 
-  // Cargar mallas desde la BD
   Future<void> _cargarMallas() async {
     try {
       final dbHelper = DatabaseHelper();
@@ -199,93 +297,221 @@ class _DialogoFormularioEmpernadorState
     }
   }
 
-  void _onTipoPernoChanged(String? tipo) {
-    setState(() {
-      tipoPernoSeleccionado = tipo;
-      longitudPernoSeleccionada = null;
-
-      final filtrados =
-          pernosCompletos
-              .where((e) => e['tipo_perno'] == tipo)
-              .map((e) => e['longitud'].toString())
-              .toSet()
-              .toList()
-            ..sort((a, b) => double.parse(a).compareTo(double.parse(b)));
-
-      longitudesPerno = filtrados;
-    });
+  List<String> _longitudesParaTipo(String tipo) {
+    if (tipo.isEmpty) return [];
+    return pernosCompletos
+        .where((e) => e['tipo_perno'] == tipo)
+        .map((e) => e['longitud'].toString())
+        .toSet()
+        .toList()
+      ..sort((a, b) => double.parse(a).compareTo(double.parse(b)));
   }
 
-  void _setLongitudesDesdeTipoInicial() {
-    if (tipoPernoSeleccionado == null) return;
-
-    final filtrados =
-        pernosCompletos
-            .where((e) => e['tipo_perno'] == tipoPernoSeleccionado)
-            .map((e) => e['longitud'].toString())
-            .toSet()
-            .toList()
-          ..sort((a, b) => double.parse(a).compareTo(double.parse(b)));
-
-    if (longitudPernoSeleccionada != null &&
-        !filtrados.contains(longitudPernoSeleccionada)) {
-      filtrados.add(longitudPernoSeleccionada!);
-    }
-
-    setState(() {
-      longitudesPerno = filtrados;
-    });
-  }
-
-  // 🔥 MODIFICADO: Cargar datos iniciales
+  // ============================================================
+  // CARGA DE DATOS INICIALES
+  // ============================================================
   void _cargarDatosIniciales() {
-    if (widget.datosIniciales != null) {
-      // 🔥 NUEVO: Cargar 'labor' como cadena combinada
-      setState(() {
-        laborSeleccionado = widget.datosIniciales!['labor']?.isNotEmpty == true
-            ? widget.datosIniciales!['labor']
-            : null;
+    if (widget.datosIniciales == null) return;
 
-        if (laborSeleccionado != null) {
-          ubicacionController.text = laborSeleccionado!;
-        }
+    setState(() {
+      laborSeleccionado = widget.datosIniciales!['labor']?.isNotEmpty == true
+          ? widget.datosIniciales!['labor']
+          : null;
 
-        // Campos específicos de empernador
-        tipoPernoSeleccionado = widget.datosIniciales!['tipo_pernos'];
-        longitudPernoSeleccionada = widget.datosIniciales!['log_pernos'];
-        nPernosInstaladosController.text =
-            widget.datosIniciales!['n_pernos_instalados'] ?? '';
-        mallaSeleccionada = widget.datosIniciales!['tipo_malla'];
-        mt52MallaController.text = widget.datosIniciales!['mt52_malla'] ?? '';
-        sistematicoPuntualSeleccionado =
-            widget.datosIniciales!['sistematico_puntual'];
-        observacionesController.text =
-            widget.datosIniciales!['observaciones'] ?? '';
-      });
-    }
+      if (laborSeleccionado != null) {
+        ubicacionController.text = laborSeleccionado!;
+      }
+
+      observacionesController.text =
+          widget.datosIniciales!['observaciones'] ?? '';
+
+      // 🔥 Tipo de perforación a nivel raíz
+      final tipoPerf = widget.datosIniciales!['tipo_perforacion'];
+      tipoPerforacionSeleccionado =
+          (tipoPerf != null && tipoPerf.toString().isNotEmpty)
+              ? tipoPerf.toString()
+              : null;
+
+      pernosFilas.clear();
+      mallasFilas.clear();
+      perforacionesFilas.clear();
+
+      // ---- Pernos ----
+      final pernosData = widget.datosIniciales!['perno'];
+      if (pernosData is List && pernosData.isNotEmpty) {
+        pernosFilas = pernosData.map<PernoFila>((d) {
+          return PernoFila(
+            tipoPerno: (d['tipo_pernos'] ?? '').toString(),
+            longitud: (d['log_pernos'] ?? '').toString(),
+            nPernos:
+                int.tryParse(d['n_pernos_instalados']?.toString() ?? '') ?? 0,
+            sistematico: (d['sistematico_puntual'] ?? '').toString(),
+          );
+        }).toList();
+      } else if (isEditable && _debeMostrarDatosPerforacion) {
+        pernosFilas.add(PernoFila(
+          tipoPerno: '',
+          longitud: '',
+          nPernos: 0,
+          sistematico: '',
+        ));
+      }
+
+      // ---- Mallas ----
+      final mallasData = widget.datosIniciales!['malla'];
+      if (mallasData is List && mallasData.isNotEmpty) {
+        mallasFilas = mallasData.map<MallaFila>((d) {
+          return MallaFila(
+            tipoMalla: (d['tipo_malla'] ?? '').toString(),
+            mt52: (d['mt52_malla'] ?? '').toString(),
+          );
+        }).toList();
+      } else if (isEditable && _debeMostrarDatosPerforacion) {
+        mallasFilas.add(MallaFila(
+          tipoMalla: '',
+          mt52: '',
+        ));
+      }
+
+      // ---- Perforación 🔥 (sin tipo_perforacion) ----
+      final perforacionesData = widget.datosIniciales!['perforacion'];
+      if (perforacionesData is List && perforacionesData.isNotEmpty) {
+        perforacionesFilas = perforacionesData.map<PerforacionFila>((d) {
+          return PerforacionFila(
+            nTaladros: int.tryParse(d['n_taladros']?.toString() ?? '') ?? 0,
+            longitudPerforacion: double.tryParse(
+                    d['longitud_perforacion']?.toString() ?? '') ??
+                0.0,
+          );
+        }).toList();
+      } else if (isEditable && _debeMostrarDatosPerforacion) {
+        perforacionesFilas.add(PerforacionFila(
+          nTaladros: 0,
+          longitudPerforacion: 0.0,
+        ));
+      }
+    });
   }
 
-  // 🔥 MODIFICADO: Guardar datos con 'labor' como cadena única
-  Future<void> _guardarDatos() async {
-    // Obtener el labor final (texto libre o seleccionado)
-    String laborFinal = laborSeleccionado ?? '';
+  // ============================================================
+  // PERNOS
+  // ============================================================
+  void _agregarPernoFila() {
+    setState(() {
+      pernosFilas.add(PernoFila(
+        tipoPerno: '',
+        longitud: '',
+        nPernos: 0,
+        sistematico: '',
+      ));
+    });
+  }
 
-    // Si no hay labor seleccionada pero hay texto en el campo, usar ese texto
+  void _eliminarPernoFila(int index) {
+    setState(() => pernosFilas.removeAt(index));
+  }
+
+  void _actualizarPernoFila(int index, String campo, dynamic valor) {
+    setState(() {
+      switch (campo) {
+        case 'tipo_pernos':
+          pernosFilas[index].tipoPerno = valor.toString();
+          pernosFilas[index].longitud = '';
+          break;
+        case 'log_pernos':
+          pernosFilas[index].longitud = valor.toString();
+          break;
+        case 'n_pernos_instalados':
+          pernosFilas[index].nPernos = int.tryParse(valor.toString()) ?? 0;
+          break;
+        case 'sistematico_puntual':
+          pernosFilas[index].sistematico = valor.toString();
+          break;
+      }
+    });
+  }
+
+  // ============================================================
+  // MALLAS
+  // ============================================================
+  void _agregarMallaFila() {
+    setState(() {
+      mallasFilas.add(MallaFila(
+        tipoMalla: '',
+        mt52: '',
+      ));
+    });
+  }
+
+  void _eliminarMallaFila(int index) {
+    setState(() => mallasFilas.removeAt(index));
+  }
+
+  void _actualizarMallaFila(int index, String campo, dynamic valor) {
+    setState(() {
+      switch (campo) {
+        case 'tipo_malla':
+          mallasFilas[index].tipoMalla = valor.toString();
+          break;
+        case 'mt52_malla':
+          mallasFilas[index].mt52 = valor.toString();
+          break;
+      }
+    });
+  }
+
+  // ============================================================
+  // PERFORACIÓN 🔥
+  // ============================================================
+  void _agregarPerforacionFila() {
+    setState(() {
+      perforacionesFilas.add(PerforacionFila(
+        nTaladros: 0,
+        longitudPerforacion: 0.0,
+      ));
+    });
+  }
+
+  void _eliminarPerforacionFila(int index) {
+    setState(() => perforacionesFilas.removeAt(index));
+  }
+
+  void _actualizarPerforacionFila(int index, String campo, dynamic valor) {
+    setState(() {
+      switch (campo) {
+        case 'n_taladros':
+          perforacionesFilas[index].nTaladros =
+              int.tryParse(valor.toString()) ?? 0;
+          break;
+        case 'longitud_perforacion':
+          perforacionesFilas[index].longitudPerforacion =
+              double.tryParse(valor.toString()) ?? 0.0;
+          break;
+      }
+    });
+  }
+
+  // ============================================================
+  // GUARDAR
+  // ============================================================
+  Future<void> _guardarDatos() async {
+    String laborFinal = laborSeleccionado ?? '';
     if (laborFinal.isEmpty && ubicacionController.text.trim().isNotEmpty) {
       laborFinal = ubicacionController.text.trim();
     }
 
-    Map<String, dynamic> datosFormulario = {
-      // 🔥 CAMBIO: Solo 'labor' como cadena combinada
-      'labor': laborFinal,
+    if (_laborEsObligatoria && laborFinal.isEmpty) {
+      _mostrarSnackbar('Debe ingresar una labor', Colors.orange);
+      return;
+    }
 
-      // Campos específicos de empernador
-      'tipo_pernos': tipoPernoSeleccionado ?? '',
-      'log_pernos': longitudPernoSeleccionada ?? '',
-      'n_pernos_instalados': nPernosInstaladosController.text,
-      'tipo_malla': mallaSeleccionada ?? '',
-      'mt52_malla': mt52MallaController.text,
-      'sistematico_puntual': sistematicoPuntualSeleccionado ?? '',
+    Map<String, dynamic> datosFormulario = {
+      'labor': laborFinal,
+      // 🔥 Tipo de perforación a nivel raíz
+      'tipo_perforacion': tipoPerforacionSeleccionado ?? '',
+      'perno': pernosFilas.map((p) => p.toMap()).toList(),
+      'malla': mallasFilas.map((m) => m.toMap()).toList(),
+      'perforacion': perforacionesFilas.map((p) => p.toMap()).toList(),
       'observaciones': observacionesController.text,
     };
 
@@ -307,8 +533,6 @@ class _DialogoFormularioEmpernadorState
 
   @override
   void dispose() {
-    nPernosInstaladosController.dispose();
-    mt52MallaController.dispose();
     observacionesController.dispose();
     ubicacionController.dispose();
     ubicacionFocusNode.dispose();
@@ -323,7 +547,7 @@ class _DialogoFormularioEmpernadorState
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        width: isSmallScreen ? screenWidth * 0.95 : 1000,
+        width: isSmallScreen ? screenWidth * 0.95 : 1100,
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.9,
           maxWidth: MediaQuery.of(context).size.width * 0.95,
@@ -344,87 +568,23 @@ class _DialogoFormularioEmpernadorState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // 🔥 NUEVA SECCIÓN: Ubicación con buscador
                           _buildSeccionUbicacion(),
-                          const SizedBox(height: 12),
-                          // SECCIÓN 2: Pernos
-                          _buildSeccionCompacta(
-                            icon: Icons.build,
-                            titulo: 'Pernos',
-                            children: [
-                              _buildCompactDropdownField(
-                                label: 'Tipo Perno',
-                                value: tipoPernoSeleccionado,
-                                items: tiposPerno,
-                                onChanged: isEditable
-                                    ? _onTipoPernoChanged
-                                    : null,
-                                icon: Icons.category,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildCompactDropdownField(
-                                label: 'Longitud',
-                                value: longitudPernoSeleccionada,
-                                items: longitudesPerno,
-                                onChanged:
-                                    (tipoPernoSeleccionado != null &&
-                                        isEditable)
-                                    ? (value) => setState(
-                                        () => longitudPernoSeleccionada = value,
-                                      )
-                                    : null,
-                                icon: Icons.straighten,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildCompactTextField(
-                                label: 'N° Pernos Instalados',
-                                controller: nPernosInstaladosController,
-                                icon: Icons.format_list_numbered,
-                                keyboardType: TextInputType.number,
-                              ),
+                          if (_debeMostrarDatosPerforacion) ...[
+                            if (_debeMostrarSeccionPerforacion) ...[
+                              const SizedBox(height: 12),
+                              _buildSeccionPerforacionFila(),
                             ],
-                          ),
-                          const SizedBox(height: 12),
-                          // SECCIÓN 3: Malla y Sistemático
-                          _buildSeccionCompacta(
-                            icon: Icons.grid_on,
-                            titulo: 'Malla y Sistemático',
-                            children: [
-                              _buildCompactDropdownField(
-                                label: 'Tipo Malla',
-                                value: mallaSeleccionada,
-                                items: opcionesMalla,
-                                onChanged: isEditable
-                                    ? (value) => setState(
-                                        () => mallaSeleccionada = value,
-                                      )
-                                    : null,
-                                icon: Icons.grid_3x3,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildCompactTextField(
-                                label: 'M2 Malla',
-                                controller: mt52MallaController,
-                                icon: Icons.straighten,
-                                keyboardType: TextInputType.number,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildCompactDropdownField(
-                                label: 'Sistemático/Puntual',
-                                value: sistematicoPuntualSeleccionado,
-                                items: opcionesSistematicoPuntual,
-                                onChanged: isEditable
-                                    ? (value) => setState(
-                                        () => sistematicoPuntualSeleccionado =
-                                            value,
-                                      )
-                                    : null,
-                                icon: Icons.timeline,
-                              ),
+                            if (_debeMostrarSeccionPernosMallas) ...[
+                              const SizedBox(height: 12),
+                              _buildSeccionPernosFila(),
+                              const SizedBox(height: 12),
+                              _buildSeccionMallasFila(),
                             ],
-                          ),
+                            // 🔥 Tipo de perforación al final, arriba de Observaciones
+                            const SizedBox(height: 12),
+                            _buildSeccionTipoPerforacion(),
+                          ],
                           const SizedBox(height: 12),
-                          // SECCIÓN 4: Observaciones
                           _buildSeccionObservaciones(),
                         ],
                       ),
@@ -437,7 +597,9 @@ class _DialogoFormularioEmpernadorState
     );
   }
 
-  // 🔥 NUEVA SECCIÓN: Ubicación con buscador
+  // ============================================================
+  // SECCIÓN UBICACIÓN
+  // ============================================================
   Widget _buildSeccionUbicacion() {
     return Container(
       padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
@@ -457,163 +619,193 @@ class _DialogoFormularioEmpernadorState
                   color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Icon(Icons.location_on, size: 12, color: Colors.green),
+                child: const Icon(Icons.location_on,
+                    size: 12, color: Colors.green),
               ),
               const SizedBox(width: 6),
               const Text(
                 'Labor (TipoLabor_Labor_Ala)',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green),
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Column(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                controller: ubicacionController,
-                focusNode: ubicacionFocusNode,
-                enabled: isEditable,
-                style: const TextStyle(fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Buscar o escribir nueva ubicación...',
-                  hintStyle: const TextStyle(fontSize: 11),
-                  prefixIcon: Icon(Icons.search, size: 16, color: widget.primaryColor),
-                  suffixIcon: ubicacionController.text.isNotEmpty && isEditable
-                      ? IconButton(
-                          icon: Icon(Icons.clear, size: 14, color: Colors.grey.shade500),
-                          onPressed: () {
-                            ubicacionController.clear();
-                            setState(() {
-                              opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
-                              mostrarSugerencias = false;
-                              laborSeleccionado = null;
-                            });
-                          },
-                        )
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  isDense: true,
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                onChanged: (text) {
-                  setState(() {
-                    if (text.isEmpty) {
-                      opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
-                      mostrarSugerencias = false;
-                      laborSeleccionado = null;
-                      return;
-                    }
-
-                    // Filtrar sugerencias
-                    opcionesUbicacionFiltradas = opcionesUbicacionCombinadas
-                        .where((item) => item.toLowerCase().contains(text.toLowerCase()))
-                        .toList();
-
-                    // Verificar si es match exacto
-                    final esMatchExacto = opcionesUbicacionCombinadas
-                        .any((item) => item.toLowerCase() == text.toLowerCase());
-
-                    if (esMatchExacto) {
-                      mostrarSugerencias = true;
-                    } else if (opcionesUbicacionFiltradas.isNotEmpty) {
-                      mostrarSugerencias = true;
-                    } else {
-                      laborSeleccionado = text;
-                      mostrarSugerencias = false;
-                    }
-                  });
-                },
-                onTap: () {
-                  setState(() {
-                    mostrarSugerencias = true;
-                    if (ubicacionController.text.isEmpty) {
-                      opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
-                    }
-                  });
-                },
-              ),
-
-              if (mostrarSugerencias && opcionesUbicacionFiltradas.isNotEmpty && isEditable)
-                Container(
-                  margin: const EdgeInsets.only(top: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.grey.shade300),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  constraints: const BoxConstraints(maxHeight: 150),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: opcionesUbicacionFiltradas.length,
-                    itemBuilder: (context, index) {
-                      final suggestion = opcionesUbicacionFiltradas[index];
-                      return ListTile(
-                        dense: true,
-                        title: Text(
-                          suggestion,
-                          style: const TextStyle(fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: ubicacionController,
+                      focusNode: ubicacionFocusNode,
+                      enabled: isEditable,
+                      style: const TextStyle(fontSize: 12),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar o escribir nueva ubicación...',
+                        hintStyle: const TextStyle(fontSize: 11),
+                        prefixIcon: Icon(Icons.search,
+                            size: 16, color: widget.primaryColor),
+                        suffixIcon: ubicacionController.text.isNotEmpty &&
+                                isEditable
+                            ? IconButton(
+                                icon: Icon(Icons.clear,
+                                    size: 14, color: Colors.grey.shade500),
+                                onPressed: () {
+                                  ubicacionController.clear();
+                                  setState(() {
+                                    opcionesUbicacionFiltradas = List.from(
+                                        opcionesUbicacionCombinadas);
+                                    mostrarSugerencias = false;
+                                    laborSeleccionado = null;
+                                  });
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide:
+                              BorderSide(color: Colors.grey.shade300),
                         ),
-                        onTap: () {
-                          setState(() {
-                            laborSeleccionado = suggestion;
-                            ubicacionController.text = suggestion;
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      onChanged: (text) {
+                        setState(() {
+                          if (text.isEmpty) {
+                            opcionesUbicacionFiltradas =
+                                List.from(opcionesUbicacionCombinadas);
                             mostrarSugerencias = false;
-                          });
-                        },
-                      );
-                    },
-                  ),
-                ),
-
-              // Badge de selección
-              if (laborSeleccionado != null && ubicacionController.text.isEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: widget.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: widget.primaryColor.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle, size: 12, color: widget.primaryColor),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          laborSeleccionado!,
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: widget.primaryColor),
-                          overflow: TextOverflow.ellipsis,
+                            laborSeleccionado = null;
+                            return;
+                          }
+                          opcionesUbicacionFiltradas =
+                              opcionesUbicacionCombinadas
+                                  .where((item) => item
+                                      .toLowerCase()
+                                      .contains(text.toLowerCase()))
+                                  .toList();
+                          final esMatchExacto =
+                              opcionesUbicacionCombinadas.any((item) =>
+                                  item.toLowerCase() == text.toLowerCase());
+                          if (esMatchExacto) {
+                            mostrarSugerencias = true;
+                          } else if (opcionesUbicacionFiltradas.isNotEmpty) {
+                            mostrarSugerencias = true;
+                          } else {
+                            laborSeleccionado = text;
+                            mostrarSugerencias = false;
+                          }
+                        });
+                      },
+                      onTap: () {
+                        setState(() {
+                          mostrarSugerencias = true;
+                          if (ubicacionController.text.isEmpty) {
+                            opcionesUbicacionFiltradas =
+                                List.from(opcionesUbicacionCombinadas);
+                          }
+                        });
+                      },
+                    ),
+                    if (mostrarSugerencias &&
+                        opcionesUbicacionFiltradas.isNotEmpty &&
+                        isEditable)
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade300),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        constraints: const BoxConstraints(maxHeight: 150),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: opcionesUbicacionFiltradas.length,
+                          itemBuilder: (context, index) {
+                            final suggestion =
+                                opcionesUbicacionFiltradas[index];
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                suggestion,
+                                style: const TextStyle(fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onTap: () {
+                                setState(() {
+                                  laborSeleccionado = suggestion;
+                                  ubicacionController.text = suggestion;
+                                  mostrarSugerencias = false;
+                                });
+                              },
+                            );
+                          },
                         ),
                       ),
-                      if (isEditable)
-                        InkWell(
-                          onTap: () {
-                            setState(() {
-                              laborSeleccionado = null;
-                              ubicacionController.clear();
-                              opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
-                            });
-                          },
-                          child: Icon(Icons.close, size: 14, color: Colors.grey.shade500),
+                    if (laborSeleccionado != null &&
+                        ubicacionController.text.isEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: widget.primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color:
+                                  widget.primaryColor.withOpacity(0.3)),
                         ),
-                    ],
-                  ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle,
+                                size: 12, color: widget.primaryColor),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                laborSeleccionado!,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: widget.primaryColor),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isEditable)
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    laborSeleccionado = null;
+                                    ubicacionController.clear();
+                                    opcionesUbicacionFiltradas = List.from(
+                                        opcionesUbicacionCombinadas);
+                                  });
+                                },
+                                child: Icon(Icons.close,
+                                    size: 14,
+                                    color: Colors.grey.shade500),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
+              ),
             ],
           ),
           if (opcionesUbicacionCombinadas.isEmpty && !isLoading)
@@ -625,6 +817,602 @@ class _DialogoFormularioEmpernadorState
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // SECCIÓN PERFORACIÓN 🔥 (solo N° Taladros y Longitud)
+  // ============================================================
+  Widget _buildSeccionPerforacionFila() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: widget.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(Icons.gps_fixed,
+                  size: 14, color: widget.primaryColor),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Perforación',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: widget.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+            if (isEditable)
+              IconButton(
+                icon: Icon(Icons.add_circle,
+                    color: widget.primaryColor, size: 20),
+                onPressed: _agregarPerforacionFila,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                splashRadius: 18,
+                tooltip: 'Agregar perforación',
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (perforacionesFilas.isEmpty)
+          _buildEmptyRow('No hay perforaciones agregadas')
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: perforacionesFilas.length,
+            itemBuilder: (context, index) {
+              final p = perforacionesFilas[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: _buildInlineTextField(
+                        label: 'N° Taladros',
+                        value: p.nTaladros == 0 ? '' : p.nTaladros.toString(),
+                        onChanged: isEditable
+                            ? (v) => _actualizarPerforacionFila(
+                                index, 'n_taladros', v)
+                            : null,
+                        icon: Icons.format_list_numbered,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: _buildInlineTextField(
+                        label: 'Longitud (m)',
+                        value: p.longitudPerforacion == 0
+                            ? ''
+                            : p.longitudPerforacion.toString(),
+                        onChanged: isEditable
+                            ? (v) => _actualizarPerforacionFila(
+                                index, 'longitud_perforacion', v)
+                            : null,
+                        icon: Icons.straighten,
+                      ),
+                    ),
+                    if (isEditable && perforacionesFilas.length > 1)
+                      SizedBox(
+                        width: 32,
+                        child: IconButton(
+                          icon: Icon(Icons.remove_circle_outline,
+                              color: Colors.red.shade400, size: 20),
+                          onPressed: () => _eliminarPerforacionFila(index),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          splashRadius: 16,
+                          tooltip: 'Eliminar perforación',
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // SECCIÓN TIPO DE PERFORACIÓN 🔥 (a nivel raíz, arriba de Observaciones)
+  // ============================================================
+  Widget _buildSeccionTipoPerforacion() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: widget.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(Icons.settings_input_component,
+                  size: 14, color: widget.primaryColor),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Tipo de Perforación',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: widget.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: (tipoPerforacionSeleccionado != null &&
+                      opcionesTipoPerforacion
+                          .contains(tipoPerforacionSeleccionado))
+                  ? tipoPerforacionSeleccionado
+                  : null,
+              hint: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.settings_input_component,
+                      size: 13, color: widget.primaryColor),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      opcionesTipoPerforacion.isEmpty
+                          ? 'Cargando...'
+                          : 'Seleccione tipo de perforación',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isEditable
+                            ? Colors.grey.shade600
+                            : Colors.grey.shade400,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              isExpanded: true,
+              icon: Icon(Icons.arrow_drop_down,
+                  size: 18, color: widget.primaryColor),
+              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              dropdownColor: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              items: opcionesTipoPerforacion.isEmpty
+                  ? [
+                      DropdownMenuItem<String>(
+                        value: null,
+                        child: Text(
+                          'No hay opciones',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade500),
+                        ),
+                      ),
+                    ]
+                  : opcionesTipoPerforacion.map((String item) {
+                      return DropdownMenuItem<String>(
+                        value: item,
+                        child:
+                            Text(item, style: const TextStyle(fontSize: 12)),
+                      );
+                    }).toList(),
+              onChanged: isEditable
+                  ? (v) =>
+                      setState(() => tipoPerforacionSeleccionado = v)
+                  : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // SECCIÓN PERNOS
+  // ============================================================
+  Widget _buildSeccionPernosFila() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: widget.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(Icons.build, size: 14, color: widget.primaryColor),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Pernos',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: widget.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+            if (isEditable)
+              IconButton(
+                icon: Icon(Icons.add_circle,
+                    color: widget.primaryColor, size: 20),
+                onPressed: _agregarPernoFila,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                splashRadius: 18,
+                tooltip: 'Agregar perno',
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (pernosFilas.isEmpty)
+          _buildEmptyRow('No hay pernos agregados')
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: pernosFilas.length,
+            itemBuilder: (context, index) {
+              final p = pernosFilas[index];
+              final longitudes = _longitudesParaTipo(p.tipoPerno);
+              final longitudValue =
+                  (p.longitud.isNotEmpty && longitudes.contains(p.longitud))
+                      ? p.longitud
+                      : null;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _buildInlineDropdownField(
+                        label: 'Tipo Perno',
+                        value: p.tipoPerno.isEmpty ? null : p.tipoPerno,
+                        items: tiposPerno,
+                        onChanged: isEditable
+                            ? (v) => _actualizarPernoFila(
+                                index, 'tipo_pernos', v ?? '')
+                            : null,
+                        icon: Icons.category,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: _buildInlineDropdownField(
+                        label: 'Longitud',
+                        value: longitudValue,
+                        items: longitudes,
+                        onChanged: (p.tipoPerno.isNotEmpty && isEditable)
+                            ? (v) => _actualizarPernoFila(
+                                index, 'log_pernos', v ?? '')
+                            : null,
+                        icon: Icons.straighten,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: _buildInlineTextField(
+                        label: 'N° Pernos',
+                        value: p.nPernos == 0 ? '' : p.nPernos.toString(),
+                        onChanged: isEditable
+                            ? (v) => _actualizarPernoFila(
+                                index, 'n_pernos_instalados', v)
+                            : null,
+                        icon: Icons.format_list_numbered,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: _buildInlineDropdownField(
+                        label: 'Sistemático/Puntual',
+                        value:
+                            p.sistematico.isEmpty ? null : p.sistematico,
+                        items: opcionesSistematicoPuntual,
+                        onChanged: isEditable
+                            ? (v) => _actualizarPernoFila(
+                                index, 'sistematico_puntual', v ?? '')
+                            : null,
+                        icon: Icons.timeline,
+                      ),
+                    ),
+                    if (isEditable && pernosFilas.length > 1)
+                      SizedBox(
+                        width: 32,
+                        child: IconButton(
+                          icon: Icon(Icons.remove_circle_outline,
+                              color: Colors.red.shade400, size: 20),
+                          onPressed: () => _eliminarPernoFila(index),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          splashRadius: 16,
+                          tooltip: 'Eliminar perno',
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // SECCIÓN MALLAS
+  // ============================================================
+  Widget _buildSeccionMallasFila() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: widget.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child:
+                  Icon(Icons.grid_on, size: 14, color: widget.primaryColor),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Mallas',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: widget.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
+            if (isEditable)
+              IconButton(
+                icon: Icon(Icons.add_circle,
+                    color: widget.primaryColor, size: 20),
+                onPressed: _agregarMallaFila,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                splashRadius: 18,
+                tooltip: 'Agregar malla',
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (mallasFilas.isEmpty)
+          _buildEmptyRow('No hay mallas agregadas')
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: mallasFilas.length,
+            itemBuilder: (context, index) {
+              final m = mallasFilas[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _buildInlineDropdownField(
+                        label: 'Tipo Malla',
+                        value: m.tipoMalla.isEmpty ? null : m.tipoMalla,
+                        items: opcionesMalla,
+                        onChanged: isEditable
+                            ? (v) => _actualizarMallaFila(
+                                index, 'tipo_malla', v ?? '')
+                            : null,
+                        icon: Icons.grid_3x3,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: _buildInlineTextField(
+                        label: 'M2 Malla',
+                        value: m.mt52,
+                        onChanged: isEditable
+                            ? (v) =>
+                                _actualizarMallaFila(index, 'mt52_malla', v)
+                            : null,
+                        icon: Icons.straighten,
+                      ),
+                    ),
+                    if (isEditable && mallasFilas.length > 1)
+                      SizedBox(
+                        width: 32,
+                        child: IconButton(
+                          icon: Icon(Icons.remove_circle_outline,
+                              color: Colors.red.shade400, size: 20),
+                          onPressed: () => _eliminarMallaFila(index),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          splashRadius: 16,
+                          tooltip: 'Eliminar malla',
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  Widget _buildEmptyRow(String mensaje) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Center(
+        child: Text(
+          mensaje,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade500,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineTextField({
+    required String label,
+    required String value,
+    required Function(String)? onChanged,
+    required IconData icon,
+  }) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: TextFormField(
+        initialValue: value,
+        enabled: onChanged != null,
+        keyboardType: TextInputType.number,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+          prefixIcon: Icon(icon, size: 13, color: widget.primaryColor),
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          isDense: true,
+        ),
+        style: const TextStyle(fontSize: 11),
+      ),
+    );
+  }
+
+  Widget _buildInlineDropdownField({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required Function(String?)? onChanged,
+    required IconData icon,
+  }) {
+    bool valueExists = value != null && items.contains(value);
+    bool isEnabled = onChanged != null && isEditable;
+
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: valueExists ? value : null,
+          hint: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: widget.primaryColor),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Text(
+                  items.isEmpty ? 'Cargando...' : label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isEnabled
+                        ? Colors.grey.shade600
+                        : Colors.grey.shade400,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          isExpanded: true,
+          icon: Icon(Icons.arrow_drop_down,
+              size: 16, color: widget.primaryColor),
+          style: const TextStyle(fontSize: 11, color: Colors.black87),
+          dropdownColor: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          items: items.isEmpty
+              ? [
+                  DropdownMenuItem<String>(
+                    value: null,
+                    child: Text(
+                      'No hay opciones',
+                      style:
+                          TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                    ),
+                  ),
+                ]
+              : items.map((String item) {
+                  return DropdownMenuItem<String>(
+                    value: item,
+                    child: Text(item, style: const TextStyle(fontSize: 11)),
+                  );
+                }).toList(),
+          onChanged: isEnabled ? onChanged : null,
+        ),
       ),
     );
   }
@@ -642,7 +1430,8 @@ class _DialogoFormularioEmpernadorState
                 color: widget.primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Icon(Icons.note_alt, size: 14, color: widget.primaryColor),
+              child:
+                  Icon(Icons.note_alt, size: 14, color: widget.primaryColor),
             ),
             const SizedBox(width: 6),
             Text(
@@ -683,59 +1472,12 @@ class _DialogoFormularioEmpernadorState
                 ),
               ),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               alignLabelWithHint: true,
             ),
             style: const TextStyle(fontSize: 13),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSeccionCompacta({
-    required IconData icon,
-    required String titulo,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: widget.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Icon(icon, size: 14, color: widget.primaryColor),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              titulo,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: widget.primaryColor,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: children.map((child) {
-            if (child is SizedBox && child.width == 8) {
-              return child;
-            }
-            return Expanded(child: child);
-          }).toList(),
         ),
       ],
     );
@@ -815,114 +1557,6 @@ class _DialogoFormularioEmpernadorState
     );
   }
 
-  Widget _buildCompactTextField({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Container(
-      height: 42,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: TextField(
-        controller: controller,
-        enabled: isEditable,
-        keyboardType: keyboardType,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-          prefixIcon: Icon(icon, size: 14, color: widget.primaryColor),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 8,
-          ),
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-          isDense: true,
-        ),
-        style: const TextStyle(fontSize: 12),
-      ),
-    );
-  }
-
-  Widget _buildCompactDropdownField({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required Function(String?)? onChanged,
-    required IconData icon,
-  }) {
-    bool valueExists = value != null && items.contains(value);
-    bool isEnabled = onChanged != null && isEditable;
-
-    return Container(
-      height: 42,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: valueExists ? value : null,
-          hint: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: widget.primaryColor),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  items.isEmpty ? 'Cargando...' : label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isEnabled
-                        ? Colors.grey.shade600
-                        : Colors.grey.shade400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          isExpanded: true,
-          icon: Icon(
-            Icons.arrow_drop_down,
-            size: 18,
-            color: widget.primaryColor,
-          ),
-          style: const TextStyle(fontSize: 12, color: Colors.black87),
-          dropdownColor: Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          items: items.isEmpty
-              ? [
-                  DropdownMenuItem<String>(
-                    value: null,
-                    child: Text(
-                      'No hay opciones',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                  ),
-                ]
-              : items.map((String item) {
-                  return DropdownMenuItem<String>(
-                    value: item,
-                    child: Text(item, style: const TextStyle(fontSize: 12)),
-                  );
-                }).toList(),
-          onChanged: isEnabled ? onChanged : null,
-        ),
-      ),
-    );
-  }
-
   Widget _buildFooter() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -950,30 +1584,36 @@ class _DialogoFormularioEmpernadorState
           ),
           const SizedBox(width: 8),
           if (isEditable)
-            ElevatedButton(
-              onPressed: _guardarDatos,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: widget.primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                minimumSize: Size.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.save, size: 14),
-                  SizedBox(width: 6),
-                  Text(
-                    'Guardar',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            Tooltip(
+              message: _puedeGuardar
+                  ? 'Guardar datos'
+                  : 'Ingrese una labor para poder guardar',
+              child: ElevatedButton(
+                onPressed: _puedeGuardar ? _guardarDatos : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.primaryColor,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  disabledForegroundColor: Colors.grey.shade600,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.save, size: 14),
+                    SizedBox(width: 6),
+                    Text(
+                      'Guardar',
+                      style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],

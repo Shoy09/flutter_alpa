@@ -28,7 +28,6 @@ class _RegistroOperacionDialogState extends State<RegistroOperacionDialog> {
   String? selectedCodigo;
   String? selectedTime;
   late bool isEditing;
-  
 
     // Función auxiliar para comparar tiempos
   int _convertToShiftMinutes(String time) {
@@ -63,10 +62,13 @@ List<String> _generateTimeIntervals(String turno) {
   List<String> times = [];
 
   if (turno == "DÍA") {
-    // Turno día: 07:00 - 17:55
-    for (int hour = 7; hour <= 17; hour++) {
+    // Turno día: 06:30 - 17:55
+    for (int hour = 6; hour <= 17; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
-        if (hour == 17 && minute > 55) break;
+        // Saltar 06:00, 06:05, 06:10, 06:15, 06:20, 06:25
+        if (hour == 6 && minute < 30) continue;
+        // Cortar en 17:55
+        if (hour == 17 && minute > 25) break;
 
         String time24 =
             "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
@@ -75,11 +77,14 @@ List<String> _generateTimeIntervals(String turno) {
       }
     }
   } else {
-    // Turno noche: 19:00 - 05:55
+    // Turno noche: 18:30 - 05:55
 
-    // Parte 1: 19:00 - 23:55
-    for (int hour = 19; hour < 24; hour++) {
+    // Parte 1: 18:30 - 23:55
+    for (int hour = 18; hour < 24; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
+        // Saltar 18:00, 18:05, 18:10, 18:15, 18:20, 18:25
+        if (hour == 18 && minute < 30) continue;
+
         String time24 =
             "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
 
@@ -90,7 +95,7 @@ List<String> _generateTimeIntervals(String turno) {
     // Parte 2: 00:00 - 05:55
     for (int hour = 0; hour <= 5; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
-        if (hour == 5 && minute > 55) break;
+        if (hour == 5 && minute > 25) break;
 
         String time24 =
             "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
@@ -185,19 +190,17 @@ bool _isValidTimeForShift(String time12h, String shift) {
     final minute = int.parse(time24h.split(':')[1]);
 
     if (shift == "DÍA") {
-      // 07:00 AM - 05:55 PM
-      if (hour < 7 || hour > 17) return false;
-
-      if (hour == 17 && minute > 55) return false;
+      // 06:30 AM - 05:55 PM
+      if (hour < 6 || hour > 17) return false;
+      if (hour == 6 && minute < 30) return false; // ⬅️ nuevo
+      if (hour == 17 && minute > 25) return false;
     } else {
-      // 07:00 PM - 05:55 AM
+      // 06:30 PM - 05:55 AM
 
-      // Bloquear rango inválido 06:00 AM -> 06:59 PM
-      if (hour > 5 && hour < 19) return false;
-
-      if (hour == 19 && minute < 0) return false;
-
-      if (hour == 5 && minute > 55) return false;
+      // Bloquear rango inválido 06:00 AM -> 06:29 PM
+      if (hour > 5 && hour < 18) return false;
+      if (hour == 18 && minute < 30) return false; // ⬅️ nuevo
+      if (hour == 5 && minute > 25) return false;
     }
 
     return true;
@@ -324,12 +327,6 @@ bool _isValidTimeForShift(String time12h, String shift) {
   @override
   void initState() {
     super.initState();
-
-     print('=== ÚLTIMA HORA REGISTRADA ===');
-    print('Valor: ${widget.ultimaHoraRegistrada}');
-    print('Turno actual: ${widget.turno}');
-    print('===============================');
-    
     isEditing = widget.existingRecord != null;
     
     if (isEditing && widget.existingRecord != null) {
@@ -519,7 +516,7 @@ if (!isEditing && widget.ultimaHoraRegistrada != null)
                       ),
                       child: const Text("Limpiar"),
                     ),
-                  ),
+                  ), 
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(

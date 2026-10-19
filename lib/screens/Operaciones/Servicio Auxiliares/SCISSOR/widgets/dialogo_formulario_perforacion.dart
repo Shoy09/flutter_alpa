@@ -3,6 +3,7 @@ import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/models/PlanMensual.dart';
 import 'package:i_miner/models/PlanMetraje.dart';
 import 'package:i_miner/models/PlanProduccion.dart';
+import 'package:i_miner/models/TipoPerforacion.dart'; // 👈 usa el mismo modelo (o crea TipoLabor si prefieres)
 
 class DialogoFormularioRompebanco extends StatefulWidget {
   final int operacionId;
@@ -23,47 +24,42 @@ class DialogoFormularioRompebanco extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<DialogoFormularioRompebanco> createState() => _DialogoFormularioRompebancoState();
+  State<DialogoFormularioRompebanco> createState() =>
+      _DialogoFormularioRompebancoState();
 }
 
 class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanco> {
   bool isEditable = false;
   bool isLoading = true;
+  bool isSmallScreen = false;
 
-  // Controlador para observaciones
+  // 🔹 Controladores
+  final TextEditingController laborController = TextEditingController();
+  final TextEditingController destinoController = TextEditingController();
+  final TextEditingController ductoController = TextEditingController();
+  final TextEditingController cableController = TextEditingController();
+  final TextEditingController tuberiaController = TextEditingController();
   final TextEditingController observacionesController = TextEditingController();
 
-  // Variables para ORIGEN (NUEVO ORDEN: Tipo Labor → Labor → Ala, Nivel interno)
-  String? origenTipoLaborSeleccionado;    // 1º
-  String? origenLaborSeleccionado;         // 2º
-  String? origenAlaSeleccionado;           // 3º
-  String? origenNivelSeleccionado;         // 4º (interno, no visible)
+  // 🔹 Focus para sugerencias de Labor
+  final FocusNode laborFocusNode = FocusNode();
+  bool mostrarSugerenciasLabor = false;
+  String? laborSeleccionada;
+  List<String> opcionesLaborCombinadas = [];
+  List<String> opcionesLaborFiltradas = [];
 
-  // Variables para DESTINO (NUEVO ORDEN: Tipo Labor → Labor → Ala, Nivel interno)
-  String? destTipoLaborSeleccionado;       // 1º
-  String? destinoLaborSeleccionado;        // 2º
-  String? destinoAlaSeleccionado;          // 3º
-  String? destinoNivelSeleccionado;        // 4º (interno, no visible)
+  // 🔥 Focus para sugerencias de Destino
+  final FocusNode destinoFocusNode = FocusNode();
+  bool mostrarSugerenciasDestino = false;
+  String? destinoSeleccionado;
+  List<String> opcionesDestinoFiltradas = [];
 
-  // Opciones para los dropdowns
-  List<String> opcionesNivel = [];
+  // 🔥 Tipo de Labor (mismo patrón que "Tipo de Perforación")
   List<String> opcionesTipoLabor = [];
-  List<String> opcionesLabor = [];
-  List<String> opcionesAla = [];
+  List<TipoPerforacion> tiposLaborCompletos = [];   // 👈 objetos completos con ID
+  String? tipoLaborSeleccionado;
 
-  // Listas filtradas para ORIGEN
-  List<String> filteredOrigenTiposLabor = [];
-  List<String> filteredOrigenLabores = [];
-  List<String> filteredOrigenAlas = [];
-  List<String> filteredOrigenNiveles = [];
-
-  // Listas filtradas para DESTINO
-  List<String> filteredDestinoTiposLabor = [];
-  List<String> filteredDestinoLabores = [];
-  List<String> filteredDestinoAlas = [];
-  List<String> filteredDestinoNiveles = [];
-
-  // Almacenar objetos completos
+  // 🔹 Datos completos
   List<PlanMensual> planesMensualCompletos = [];
   List<PlanProduccion> planesProduccionCompletos = [];
   List<PlanMetraje> planesMetrajeCompletos = [];
@@ -76,10 +72,24 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
     _cargarDatosDesdeBD();
   }
 
+  @override
+  void dispose() {
+    laborController.dispose();
+    destinoController.dispose();
+    ductoController.dispose();
+    cableController.dispose();
+    tuberiaController.dispose();
+    observacionesController.dispose();
+    laborFocusNode.dispose();
+    destinoFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _cargarDatosDesdeBD() async {
     setState(() => isLoading = true);
     try {
       await _cargarPlanesCombinados();
+      await _cargarTiposLabor();
     } catch (e) {
       print("Error cargando datos: $e");
     } finally {
@@ -90,405 +100,138 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
   Future<void> _cargarPlanesCombinados() async {
     try {
       final dbHelper = DatabaseHelper();
-      
+
       final results = await Future.wait([
         dbHelper.getPlanesMensual(),
         dbHelper.getPlanesProduccion(),
         dbHelper.getPlanesMetraje(),
       ]);
-      
+
       planesMensualCompletos = results[0] as List<PlanMensual>;
       planesProduccionCompletos = results[1] as List<PlanProduccion>;
       planesMetrajeCompletos = results[2] as List<PlanMetraje>;
 
-      Set<String> nivelesSet = {};
-      Set<String> tiposLaborSet = {};
-      Set<String> laboresSet = {};
-      Set<String> alasSet = {};
-
-      for (var plan in planesMensualCompletos) {
-        if (plan.nivel?.isNotEmpty ?? false) nivelesSet.add(plan.nivel!);
-        if (plan.tipoLabor?.isNotEmpty ?? false) tiposLaborSet.add(plan.tipoLabor!);
-        if (plan.labor?.isNotEmpty ?? false) laboresSet.add(plan.labor!);
-        if (plan.ala?.isNotEmpty ?? false) alasSet.add(plan.ala!);
-      }
-
-      for (var plan in planesProduccionCompletos) {
-        if (plan.nivel?.isNotEmpty ?? false) nivelesSet.add(plan.nivel!);
-        if (plan.tipoLabor?.isNotEmpty ?? false) tiposLaborSet.add(plan.tipoLabor!);
-        if (plan.labor?.isNotEmpty ?? false) laboresSet.add(plan.labor!);
-        if (plan.ala?.isNotEmpty ?? false) alasSet.add(plan.ala!);
-      }
-
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.nivel?.isNotEmpty ?? false) nivelesSet.add(plan.nivel!);
-        if (plan.tipoLabor?.isNotEmpty ?? false) tiposLaborSet.add(plan.tipoLabor!);
-        if (plan.labor?.isNotEmpty ?? false) laboresSet.add(plan.labor!);
-        if (plan.ala?.isNotEmpty ?? false) alasSet.add(plan.ala!);
-      }
-
-      setState(() {
-        opcionesNivel = nivelesSet.toList()..sort();
-        opcionesTipoLabor = tiposLaborSet.toList()..sort();
-        opcionesLabor = laboresSet.toList()..sort();
-        opcionesAla = alasSet.toList()..sort();
-
-        filteredOrigenTiposLabor = List.from(opcionesTipoLabor);
-        filteredOrigenLabores = List.from(opcionesLabor);
-        filteredOrigenAlas = List.from(opcionesAla);
-        filteredOrigenNiveles = List.from(opcionesNivel);
-        
-        filteredDestinoTiposLabor = List.from(opcionesTipoLabor);
-        filteredDestinoLabores = List.from(opcionesLabor);
-        filteredDestinoAlas = List.from(opcionesAla);
-        filteredDestinoNiveles = List.from(opcionesNivel);
-      });
-
+      _generarOpcionesLabor();
     } catch (e) {
       print("Error cargando planes combinados: $e");
       setState(() {
-        opcionesNivel = ['Nv 300', 'Nv 320', 'Nv 340', 'Nv 360'];
-        opcionesTipoLabor = ['Galería', 'Crucero', 'Rampa', 'Chimenea'];
-        opcionesLabor = ['Labor 01', 'Labor 02', 'Labor 03', 'Labor 04'];
-        opcionesAla = ['Ala Norte', 'Ala Sur', 'Ala Este', 'Ala Oeste'];
-
-        filteredOrigenTiposLabor = List.from(opcionesTipoLabor);
-        filteredOrigenLabores = List.from(opcionesLabor);
-        filteredOrigenAlas = List.from(opcionesAla);
-        filteredOrigenNiveles = List.from(opcionesNivel);
-        
-        filteredDestinoTiposLabor = List.from(opcionesTipoLabor);
-        filteredDestinoLabores = List.from(opcionesLabor);
-        filteredDestinoAlas = List.from(opcionesAla);
-        filteredDestinoNiveles = List.from(opcionesNivel);
+        opcionesLaborCombinadas = [
+          'Galería_LaborA_AlaNorte',
+          'Galería_LaborA_AlaSur',
+          'Crucero_LaborB_AlaEste',
+        ];
+        opcionesLaborFiltradas = List.from(opcionesLaborCombinadas);
+        opcionesDestinoFiltradas = List.from(opcionesLaborCombinadas);
       });
     }
   }
 
-  // ==================== FUNCIONES PARA ORIGEN ====================
-  void _onOrigenTipoLaborChanged(String? nuevoTipoLabor) {
-    setState(() {
-      origenTipoLaborSeleccionado = nuevoTipoLabor;
-      origenLaborSeleccionado = null;
-      origenAlaSeleccionado = null;
-      origenNivelSeleccionado = null;
-      _actualizarFiltrosOrigen();
-    });
-  }
+  /// 🔥 Combina tipoLabor + labor + ala para los buscadores
+  void _generarOpcionesLabor() {
+    Set<String> opciones = {};
 
-  void _onOrigenLaborChanged(String? nuevoLabor) {
-    setState(() {
-      origenLaborSeleccionado = nuevoLabor;
-      origenAlaSeleccionado = null;
-      origenNivelSeleccionado = null;
-      _actualizarFiltrosOrigen();
-    });
-  }
-
-  void _onOrigenAlaChanged(String? nuevoAla) {
-    setState(() {
-      origenAlaSeleccionado = nuevoAla;
-      origenNivelSeleccionado = null;
-      _actualizarFiltrosOrigen();
-    });
-  }
-
-  void _actualizarFiltrosOrigen() {
-    // Filtrar Labores basado en Tipo Labor
-    if (origenTipoLaborSeleccionado != null) {
-      Set<String> laboresFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        if (plan.tipoLabor == origenTipoLaborSeleccionado && (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        if (plan.tipoLabor == origenTipoLaborSeleccionado && (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.tipoLabor == origenTipoLaborSeleccionado && (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      filteredOrigenLabores = laboresFiltrados.toList()..sort();
-    } else {
-      filteredOrigenLabores = List.from(opcionesLabor);
+    void agregarDesde(dynamic plan) {
+      String combinado = '';
+      if ((plan.tipoLabor ?? '').isNotEmpty) combinado += plan.tipoLabor!;
+      if ((plan.labor ?? '').isNotEmpty) combinado += '_${plan.labor!}';
+      if ((plan.ala ?? '').isNotEmpty) combinado += '_${plan.ala!}';
+      if (combinado.isNotEmpty) opciones.add(combinado);
     }
 
-    // Filtrar Alas basado en Tipo Labor y Labor
-    if (origenTipoLaborSeleccionado != null && origenLaborSeleccionado != null) {
-      Set<String> alasFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        if (plan.tipoLabor == origenTipoLaborSeleccionado &&
-            plan.labor == origenLaborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        if (plan.tipoLabor == origenTipoLaborSeleccionado &&
-            plan.labor == origenLaborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.tipoLabor == origenTipoLaborSeleccionado &&
-            plan.labor == origenLaborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      filteredOrigenAlas = alasFiltrados.toList()..sort();
-    } else {
-      filteredOrigenAlas = List.from(opcionesAla);
-    }
+    for (var p in planesMensualCompletos) agregarDesde(p);
+    for (var p in planesProduccionCompletos) agregarDesde(p);
+    for (var p in planesMetrajeCompletos) agregarDesde(p);
 
-    // Filtrar Niveles (INTERNO)
-    if (origenTipoLaborSeleccionado != null && origenLaborSeleccionado != null) {
-      Set<String> nivelesFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        bool coincideBase = plan.tipoLabor == origenTipoLaborSeleccionado && plan.labor == origenLaborSeleccionado;
-        bool coincideAla = origenAlaSeleccionado == null || origenAlaSeleccionado!.isEmpty || plan.ala == origenAlaSeleccionado;
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        bool coincideBase = plan.tipoLabor == origenTipoLaborSeleccionado && plan.labor == origenLaborSeleccionado;
-        bool coincideAla = origenAlaSeleccionado == null || origenAlaSeleccionado!.isEmpty || plan.ala == origenAlaSeleccionado;
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        bool coincideBase = plan.tipoLabor == origenTipoLaborSeleccionado && plan.labor == origenLaborSeleccionado;
-        bool coincideAla = origenAlaSeleccionado == null || origenAlaSeleccionado!.isEmpty || plan.ala == origenAlaSeleccionado;
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      filteredOrigenNiveles = nivelesFiltrados.toList()..sort();
+    setState(() {
+      opcionesLaborCombinadas = opciones.toList()..sort();
+      opcionesLaborFiltradas = List.from(opcionesLaborCombinadas);
+      opcionesDestinoFiltradas = List.from(opcionesLaborCombinadas);
+    });
+  }
 
-      if (filteredOrigenNiveles.isNotEmpty) {
-        if (origenNivelSeleccionado == null || !filteredOrigenNiveles.contains(origenNivelSeleccionado)) {
-          origenNivelSeleccionado = filteredOrigenNiveles.first;
-        }
-      } else {
-        origenNivelSeleccionado = null;
-      }
-    } else {
-      filteredOrigenNiveles = List.from(opcionesNivel);
-      if (origenTipoLaborSeleccionado == null || origenLaborSeleccionado == null) {
-        origenNivelSeleccionado = null;
-      }
+  /// 🔥 Tipo de Labor: MISMO patrón que "Tipo de Perforación"
+  Future<void> _cargarTiposLabor() async {
+    try {
+      final dbHelper = DatabaseHelper();
+
+      // 🔥 Cambia "PERFORACIÓN HORIZONTAL" por el proceso que uses para SCISSOR
+      // Por ejemplo: "ROMPEBANCO" o "SCISSOR"
+      tiposLaborCompletos = await dbHelper.getTiposPerforacionByProceso(
+        "PERFORACIÓN HORIZONTAL",   // 👈 ajusta el proceso aquí
+      );
+
+      final lista = tiposLaborCompletos
+          .map((t) => t.nombre ?? '')
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+      setState(() {
+        opcionesTipoLabor = lista;
+      });
+    } catch (e) {
+      print("Error cargando tipos de labor: $e");
+      setState(() {
+        opcionesTipoLabor = ['Galería', 'Crucero', 'Rampa', 'Chimenea'];
+        tiposLaborCompletos = [];
+      });
     }
   }
 
-  // ==================== FUNCIONES PARA DESTINO ====================
-  void _onDestinoTipoLaborChanged(String? nuevoTipoLabor) {
-    setState(() {
-      destTipoLaborSeleccionado = nuevoTipoLabor;
-      destinoLaborSeleccionado = null;
-      destinoAlaSeleccionado = null;
-      destinoNivelSeleccionado = null;
-      _actualizarFiltrosDestino();
-    });
-  }
-
-  void _onDestinoLaborChanged(String? nuevoLabor) {
-    setState(() {
-      destinoLaborSeleccionado = nuevoLabor;
-      destinoAlaSeleccionado = null;
-      destinoNivelSeleccionado = null;
-      _actualizarFiltrosDestino();
-    });
-  }
-
-  void _onDestinoAlaChanged(String? nuevoAla) {
-    setState(() {
-      destinoAlaSeleccionado = nuevoAla;
-      destinoNivelSeleccionado = null;
-      _actualizarFiltrosDestino();
-    });
-  }
-
-  void _actualizarFiltrosDestino() {
-    // Filtrar Labores basado en Tipo Labor
-    if (destTipoLaborSeleccionado != null) {
-      Set<String> laboresFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        if (plan.tipoLabor == destTipoLaborSeleccionado && (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        if (plan.tipoLabor == destTipoLaborSeleccionado && (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.tipoLabor == destTipoLaborSeleccionado && (plan.labor?.isNotEmpty ?? false)) {
-          laboresFiltrados.add(plan.labor!);
-        }
-      }
-      
-      filteredDestinoLabores = laboresFiltrados.toList()..sort();
-    } else {
-      filteredDestinoLabores = List.from(opcionesLabor);
-    }
-
-    // Filtrar Alas basado en Tipo Labor y Labor
-    if (destTipoLaborSeleccionado != null && destinoLaborSeleccionado != null) {
-      Set<String> alasFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        if (plan.tipoLabor == destTipoLaborSeleccionado &&
-            plan.labor == destinoLaborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        if (plan.tipoLabor == destTipoLaborSeleccionado &&
-            plan.labor == destinoLaborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        if (plan.tipoLabor == destTipoLaborSeleccionado &&
-            plan.labor == destinoLaborSeleccionado &&
-            (plan.ala?.isNotEmpty ?? false)) {
-          alasFiltrados.add(plan.ala!);
-        }
-      }
-      
-      filteredDestinoAlas = alasFiltrados.toList()..sort();
-    } else {
-      filteredDestinoAlas = List.from(opcionesAla);
-    }
-
-    // Filtrar Niveles (INTERNO)
-    if (destTipoLaborSeleccionado != null && destinoLaborSeleccionado != null) {
-      Set<String> nivelesFiltrados = {};
-      
-      for (var plan in planesMensualCompletos) {
-        bool coincideBase = plan.tipoLabor == destTipoLaborSeleccionado && plan.labor == destinoLaborSeleccionado;
-        bool coincideAla = destinoAlaSeleccionado == null || destinoAlaSeleccionado!.isEmpty || plan.ala == destinoAlaSeleccionado;
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      for (var plan in planesProduccionCompletos) {
-        bool coincideBase = plan.tipoLabor == destTipoLaborSeleccionado && plan.labor == destinoLaborSeleccionado;
-        bool coincideAla = destinoAlaSeleccionado == null || destinoAlaSeleccionado!.isEmpty || plan.ala == destinoAlaSeleccionado;
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      for (var plan in planesMetrajeCompletos) {
-        bool coincideBase = plan.tipoLabor == destTipoLaborSeleccionado && plan.labor == destinoLaborSeleccionado;
-        bool coincideAla = destinoAlaSeleccionado == null || destinoAlaSeleccionado!.isEmpty || plan.ala == destinoAlaSeleccionado;
-        if (coincideBase && coincideAla && (plan.nivel?.isNotEmpty ?? false)) {
-          nivelesFiltrados.add(plan.nivel!);
-        }
-      }
-      
-      filteredDestinoNiveles = nivelesFiltrados.toList()..sort();
-
-      if (filteredDestinoNiveles.isNotEmpty) {
-        if (destinoNivelSeleccionado == null || !filteredDestinoNiveles.contains(destinoNivelSeleccionado)) {
-          destinoNivelSeleccionado = filteredDestinoNiveles.first;
-        }
-      } else {
-        destinoNivelSeleccionado = null;
-      }
-    } else {
-      filteredDestinoNiveles = List.from(opcionesNivel);
-      if (destTipoLaborSeleccionado == null || destinoLaborSeleccionado == null) {
-        destinoNivelSeleccionado = null;
-      }
+  /// 🔥 Obtener ID del tipo de labor seleccionado (igual que en Perforación)
+  int? _obtenerIdTipoLabor(String? nombre) {
+    if (nombre == null) return null;
+    try {
+      return tiposLaborCompletos
+          .firstWhere((tipo) => tipo.nombre == nombre)
+          .id;
+    } catch (e) {
+      return null;
     }
   }
 
   void _cargarDatosIniciales() {
-    if (widget.datosIniciales != null) {
-      setState(() {
-        // ORIGEN
-        origenTipoLaborSeleccionado = widget.datosIniciales!['origen_tipo_labor']?.isNotEmpty == true
-            ? widget.datosIniciales!['origen_tipo_labor']
-            : null;
-        origenLaborSeleccionado = widget.datosIniciales!['origen_labor']?.isNotEmpty == true
-            ? widget.datosIniciales!['origen_labor']
-            : null;
-        origenAlaSeleccionado = widget.datosIniciales!['origen_ala']?.isNotEmpty == true
-            ? widget.datosIniciales!['origen_ala']
-            : null;
-        origenNivelSeleccionado = widget.datosIniciales!['origen_nivel']?.isNotEmpty == true
-            ? widget.datosIniciales!['origen_nivel']
-            : null;
+    if (widget.datosIniciales == null) return;
 
-        // DESTINO
-        destTipoLaborSeleccionado = widget.datosIniciales!['destino_tipo_labor']?.isNotEmpty == true
-            ? widget.datosIniciales!['destino_tipo_labor']
-            : null;
-        destinoLaborSeleccionado = widget.datosIniciales!['destino_labor']?.isNotEmpty == true
-            ? widget.datosIniciales!['destino_labor']
-            : null;
-        destinoAlaSeleccionado = widget.datosIniciales!['destino_ala']?.isNotEmpty == true
-            ? widget.datosIniciales!['destino_ala']
-            : null;
-        destinoNivelSeleccionado = widget.datosIniciales!['destino_nivel']?.isNotEmpty == true
-            ? widget.datosIniciales!['destino_nivel']
-            : null;
+    setState(() {
+      // LABOR
+      final laborInicial = widget.datosIniciales!['labor'] ?? '';
+      laborSeleccionada = laborInicial.isNotEmpty ? laborInicial : null;
+      laborController.text = laborInicial;
 
-        observacionesController.text = widget.datosIniciales!['observaciones'] ?? '';
-      });
+      // DESTINO
+      final destinoInicial = widget.datosIniciales!['destino'] ?? '';
+      destinoSeleccionado = destinoInicial.isNotEmpty ? destinoInicial : null;
+      destinoController.text = destinoInicial;
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _actualizarFiltrosOrigen();
-        _actualizarFiltrosDestino();
-      });
-    }
+      // N° METROS
+      ductoController.text = widget.datosIniciales!['ducto']?.toString() ?? '';
+      cableController.text = widget.datosIniciales!['cable']?.toString() ?? '';
+      tuberiaController.text = widget.datosIniciales!['tuberia']?.toString() ?? '';
+
+      // TIPO DE LABOR
+      final tipoLab = widget.datosIniciales!['tipo_labor'] ?? '';
+      tipoLaborSeleccionado = tipoLab.isNotEmpty ? tipoLab : null;
+
+      // OBSERVACIONES
+      observacionesController.text = widget.datosIniciales!['observaciones'] ?? '';
+    });
   }
 
-  Future<void> _guardarDatos() async {
+  void _guardarDatos() async {
+    String laborFinal = laborSeleccionada ?? laborController.text.trim();
+    String destinoFinal = destinoSeleccionado ?? destinoController.text.trim();
+
     Map<String, dynamic> datosFormulario = {
-      // ORIGEN (nuevo orden)
-      'origen_tipo_labor': origenTipoLaborSeleccionado ?? '',
-      'origen_labor': origenLaborSeleccionado ?? '',
-      'origen_ala': origenAlaSeleccionado ?? '',
-      'origen_nivel': origenNivelSeleccionado ?? '',
-
-      // DESTINO (nuevo orden)
-      'destino_tipo_labor': destTipoLaborSeleccionado ?? '',
-      'destino_labor': destinoLaborSeleccionado ?? '',
-      'destino_ala': destinoAlaSeleccionado ?? '',
-      'destino_nivel': destinoNivelSeleccionado ?? '',
-
-      'observaciones': observacionesController.text,
+      'labor': laborFinal,
+      'destino': destinoFinal,
+      'ducto': ductoController.text.trim(),
+      'cable': cableController.text.trim(),
+      'tuberia': tuberiaController.text.trim(),
+      'tipo_labor': tipoLaborSeleccionado ?? '',
+      'tipo_labor_id': _obtenerIdTipoLabor(tipoLaborSeleccionado),  // 🔥 NUEVO
+      'observaciones': observacionesController.text.trim(),
     };
 
     widget.onGuardar(datosFormulario);
@@ -508,18 +251,17 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
   }
 
   @override
-  void dispose() {
-    observacionesController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    isSmallScreen = screenWidth < 600;
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        width: 1100,
-        constraints: const BoxConstraints(maxHeight: 700),
+        width: isSmallScreen ? screenWidth * 0.95 : 800,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           color: Colors.white,
@@ -532,13 +274,16 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
                   _buildHeader(),
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          _buildSeccionOrigen(),
-                          const SizedBox(height: 20),
-                          _buildSeccionDestino(),
-                          const SizedBox(height: 20),
+                          _buildSeccionUbicacion(),
+                          const SizedBox(height: 12),
+                          _buildSeccionMetros(),
+                          const SizedBox(height: 12),
+                          _buildSeccionTipoLabor(),
+                          const SizedBox(height: 12),
                           _buildSeccionObservaciones(),
                         ],
                       ),
@@ -551,137 +296,10 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
     );
   }
 
-  Widget _buildSeccionOrigen() {
+  // ==================== SECCIÓN: UBICACIÓN (LABOR + DESTINO) ====================
+  Widget _buildSeccionUbicacion() {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(4)),
-                child: const Icon(Icons.exit_to_app, size: 14, color: Colors.white),
-              ),
-              const SizedBox(width: 6),
-              Text('ORIGEN', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildCompactDropdownField(
-                  label: 'Tipo Labor',
-                  value: origenTipoLaborSeleccionado,
-                  items: filteredOrigenTiposLabor,
-                  onChanged: isEditable ? _onOrigenTipoLaborChanged : null,
-                  icon: Icons.construction,
-                  color: Colors.blue,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildCompactDropdownField(
-                  label: 'Labor',
-                  value: origenLaborSeleccionado,
-                  items: filteredOrigenLabores,
-                  onChanged: (origenTipoLaborSeleccionado != null && isEditable) ? _onOrigenLaborChanged : null,
-                  icon: Icons.factory,
-                  color: Colors.blue,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildCompactDropdownField(
-                  label: 'Ala',
-                  value: origenAlaSeleccionado,
-                  items: filteredOrigenAlas,
-                  onChanged: (origenLaborSeleccionado != null && isEditable) ? _onOrigenAlaChanged : null,
-                  icon: Icons.compare_arrows,
-                  color: Colors.blue,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSeccionDestino() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(4)),
-                child: const Icon(Icons.login, size: 14, color: Colors.white),
-              ),
-              const SizedBox(width: 6),
-              Text('DESTINO', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildCompactDropdownField(
-                  label: 'Tipo Labor',
-                  value: destTipoLaborSeleccionado,
-                  items: filteredDestinoTiposLabor,
-                  onChanged: isEditable ? _onDestinoTipoLaborChanged : null,
-                  icon: Icons.construction,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildCompactDropdownField(
-                  label: 'Labor',
-                  value: destinoLaborSeleccionado,
-                  items: filteredDestinoLabores,
-                  onChanged: (destTipoLaborSeleccionado != null && isEditable) ? _onDestinoLaborChanged : null,
-                  icon: Icons.factory,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildCompactDropdownField(
-                  label: 'Ala',
-                  value: destinoAlaSeleccionado,
-                  items: filteredDestinoAlas,
-                  onChanged: (destinoLaborSeleccionado != null && isEditable) ? _onDestinoAlaChanged : null,
-                  icon: Icons.compare_arrows,
-                  color: Colors.green,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSeccionObservaciones() {
-    return Container(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
@@ -692,22 +310,429 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
         children: [
           Row(
             children: [
-              Icon(Icons.comment, size: 16, color: widget.primaryColor),
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.location_on, size: 12, color: Colors.green),
+              ),
               const SizedBox(width: 6),
-              Text('Observaciones', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: widget.primaryColor)),
+              const Text(
+                'Ubicación',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green),
+              ),
             ],
           ),
+          const SizedBox(height: 6),
+
+          _buildLaborBuscador(),
           const SizedBox(height: 8),
-          TextField(
-            controller: observacionesController,
-            enabled: isEditable,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: 'Escriba observaciones adicionales...',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.shade300)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.shade300)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: widget.primaryColor)),
-              contentPadding: const EdgeInsets.all(10),
+          _buildDestinoBuscador(),
+        ],
+      ),
+    );
+  }
+
+  /// Campo Labor con sugerencias
+  Widget _buildLaborBuscador() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.work_outline, size: 10, color: Colors.green),
+            const SizedBox(width: 4),
+            Text(
+              'Labor',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        TextField(
+          controller: laborController,
+          focusNode: laborFocusNode,
+          enabled: isEditable,
+          style: const TextStyle(fontSize: 12),
+          decoration: InputDecoration(
+            hintText: 'Buscar o escribir labor...',
+            hintStyle: const TextStyle(fontSize: 11),
+            prefixIcon: Icon(Icons.search, size: 16, color: widget.primaryColor),
+            suffixIcon: laborController.text.isNotEmpty && isEditable
+                ? IconButton(
+                    icon: Icon(Icons.clear, size: 14, color: Colors.grey.shade500),
+                    onPressed: () {
+                      laborController.clear();
+                      setState(() {
+                        opcionesLaborFiltradas = List.from(opcionesLaborCombinadas);
+                        mostrarSugerenciasLabor = false;
+                        laborSeleccionada = null;
+                      });
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            isDense: true,
+            filled: true,
+            fillColor: Colors.white,
+          ),
+          onChanged: (text) {
+            setState(() {
+              if (text.isEmpty) {
+                opcionesLaborFiltradas = List.from(opcionesLaborCombinadas);
+                mostrarSugerenciasLabor = false;
+                laborSeleccionada = null;
+                return;
+              }
+              opcionesLaborFiltradas = opcionesLaborCombinadas
+                  .where((e) => e.toLowerCase().contains(text.toLowerCase()))
+                  .toList();
+
+              final esMatchExacto = opcionesLaborCombinadas
+                  .any((e) => e.toLowerCase() == text.toLowerCase());
+
+              if (esMatchExacto || opcionesLaborFiltradas.isNotEmpty) {
+                mostrarSugerenciasLabor = true;
+              } else {
+                laborSeleccionada = text;
+                mostrarSugerenciasLabor = false;
+              }
+            });
+          },
+          onTap: () {
+            setState(() {
+              mostrarSugerenciasLabor = true;
+              if (laborController.text.isEmpty) {
+                opcionesLaborFiltradas = List.from(opcionesLaborCombinadas);
+              }
+            });
+          },
+        ),
+        if (mostrarSugerenciasLabor &&
+            opcionesLaborFiltradas.isNotEmpty &&
+            isEditable)
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            constraints: const BoxConstraints(maxHeight: 150),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: opcionesLaborFiltradas.length,
+              itemBuilder: (context, index) {
+                final s = opcionesLaborFiltradas[index];
+                return ListTile(
+                  dense: true,
+                  title: Text(s, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                  onTap: () {
+                    setState(() {
+                      laborSeleccionada = s;
+                      laborController.text = s;
+                      mostrarSugerenciasLabor = false;
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Campo Destino con sugerencias (misma data que Labor)
+  Widget _buildDestinoBuscador() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.flag, size: 10, color: Colors.green),
+            const SizedBox(width: 4),
+            Text(
+              'Destino',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        TextField(
+          controller: destinoController,
+          focusNode: destinoFocusNode,
+          enabled: isEditable,
+          style: const TextStyle(fontSize: 12),
+          decoration: InputDecoration(
+            hintText: 'Buscar o escribir destino...',
+            hintStyle: const TextStyle(fontSize: 11),
+            prefixIcon: Icon(Icons.search, size: 16, color: widget.primaryColor),
+            suffixIcon: destinoController.text.isNotEmpty && isEditable
+                ? IconButton(
+                    icon: Icon(Icons.clear, size: 14, color: Colors.grey.shade500),
+                    onPressed: () {
+                      destinoController.clear();
+                      setState(() {
+                        opcionesDestinoFiltradas = List.from(opcionesLaborCombinadas);
+                        mostrarSugerenciasDestino = false;
+                        destinoSeleccionado = null;
+                      });
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            isDense: true,
+            filled: true,
+            fillColor: Colors.white,
+          ),
+          onChanged: (text) {
+            setState(() {
+              if (text.isEmpty) {
+                opcionesDestinoFiltradas = List.from(opcionesLaborCombinadas);
+                mostrarSugerenciasDestino = false;
+                destinoSeleccionado = null;
+                return;
+              }
+              opcionesDestinoFiltradas = opcionesLaborCombinadas
+                  .where((e) => e.toLowerCase().contains(text.toLowerCase()))
+                  .toList();
+
+              final esMatchExacto = opcionesLaborCombinadas
+                  .any((e) => e.toLowerCase() == text.toLowerCase());
+
+              if (esMatchExacto || opcionesDestinoFiltradas.isNotEmpty) {
+                mostrarSugerenciasDestino = true;
+              } else {
+                destinoSeleccionado = text;
+                mostrarSugerenciasDestino = false;
+              }
+            });
+          },
+          onTap: () {
+            setState(() {
+              mostrarSugerenciasDestino = true;
+              if (destinoController.text.isEmpty) {
+                opcionesDestinoFiltradas = List.from(opcionesLaborCombinadas);
+              }
+            });
+          },
+        ),
+        if (mostrarSugerenciasDestino &&
+            opcionesDestinoFiltradas.isNotEmpty &&
+            isEditable)
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            constraints: const BoxConstraints(maxHeight: 150),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: opcionesDestinoFiltradas.length,
+              itemBuilder: (context, index) {
+                final s = opcionesDestinoFiltradas[index];
+                return ListTile(
+                  dense: true,
+                  title: Text(s, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                  onTap: () {
+                    setState(() {
+                      destinoSeleccionado = s;
+                      destinoController.text = s;
+                      mostrarSugerenciasDestino = false;
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ==================== SECCIÓN: N° METROS ====================
+  Widget _buildSeccionMetros() {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.straighten, size: 12, color: Colors.orange),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'N° Metros',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          isSmallScreen
+              ? Column(
+                  children: [
+                    _buildTextFieldSimple('Ducto', ductoController, Icons.cable, keyboardType: TextInputType.number),
+                    const SizedBox(height: 6),
+                    _buildTextFieldSimple('Cable', cableController, Icons.cable, keyboardType: TextInputType.number),
+                    const SizedBox(height: 6),
+                    _buildTextFieldSimple('Tubería', tuberiaController, Icons.plumbing, keyboardType: TextInputType.number),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextFieldSimple('Ducto', ductoController, Icons.cable, keyboardType: TextInputType.number),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildTextFieldSimple('Cable', cableController, Icons.electrical_services, keyboardType: TextInputType.number),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildTextFieldSimple('Tubería', tuberiaController, Icons.plumbing, keyboardType: TextInputType.number),
+                    ),
+                  ],
+                ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== SECCIÓN: TIPO DE LABOR ====================
+  Widget _buildSeccionTipoLabor() {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.category, size: 12, color: Colors.blue),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'Tipo de Labor',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.blue),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _buildCompactDropdownField(
+            label: 'Seleccione tipo de labor',
+            value: tipoLaborSeleccionado,
+            items: opcionesTipoLabor,
+            onChanged: isEditable
+                ? (value) => setState(() => tipoLaborSeleccionado = value)
+                : null,
+            icon: Icons.category,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== SECCIÓN: OBSERVACIONES ====================
+  Widget _buildSeccionObservaciones() {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: widget.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Icon(Icons.note_alt, size: 12, color: widget.primaryColor),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Observaciones',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: widget.primaryColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: isSmallScreen ? 70 : 60,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: TextField(
+              controller: observacionesController,
+              enabled: isEditable,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: InputDecoration(
+                hintText: 'Indicar falla mecánica y firma mecánica...',
+                hintStyle: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Icon(Icons.comment, size: 14, color: widget.primaryColor.withOpacity(0.7)),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              style: const TextStyle(fontSize: 12),
             ),
           ),
         ],
@@ -715,45 +740,47 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
     );
   }
 
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: widget.primaryColor,
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
-            child: const Icon(Icons.rocket_launch, color: Colors.white, size: 18),
+  // ==================== HELPERS ====================
+  Widget _buildTextFieldSimple(
+    String label,
+    TextEditingController controller,
+    IconData icon, {
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 10, color: widget.primaryColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.grey.shade300),
           ),
-          const SizedBox(width: 10),
-          const Text('Formulario Rompebanco', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          _buildEstadoBadge(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEstadoBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: isEditable ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isEditable ? Colors.green : Colors.grey, width: 0.5),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 6, height: 6, decoration: BoxDecoration(color: isEditable ? Colors.green : Colors.grey, shape: BoxShape.circle)),
-          const SizedBox(width: 4),
-          Text(isEditable ? 'EDITABLE' : 'LECTURA', style: TextStyle(color: isEditable ? Colors.green : Colors.grey, fontSize: 10, fontWeight: FontWeight.w600)),
-        ],
-      ),
+          child: TextField(
+            controller: controller,
+            enabled: isEditable,
+            keyboardType: keyboardType,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              isDense: true,
+            ),
+            style: const TextStyle(fontSize: 11),
+          ),
+        ),
+      ],
     );
   }
 
@@ -763,43 +790,131 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
     required List<String> items,
     required Function(String?)? onChanged,
     required IconData icon,
-    Color color = const Color(0xFF1B5E6B),
   }) {
     bool valueExists = value != null && items.contains(value);
     bool isEnabled = onChanged != null && isEditable;
 
-    return Container(
-      height: 42,
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.shade300)),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: valueExists ? value : null,
-          hint: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 4),
-              Expanded(child: Text(items.isEmpty ? 'Cargando...' : label, style: TextStyle(fontSize: 11, color: isEnabled ? Colors.grey.shade600 : Colors.grey.shade400), overflow: TextOverflow.ellipsis)),
-            ],
-          ),
-          isExpanded: true,
-          icon: Icon(Icons.arrow_drop_down, size: 18, color: color),
-          style: const TextStyle(fontSize: 12, color: Colors.black87),
-          dropdownColor: Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          items: items.isEmpty
-              ? [DropdownMenuItem<String>(value: null, child: Text('No hay opciones', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)))]
-              : items.map((item) => DropdownMenuItem<String>(value: item, child: Text(item, style: const TextStyle(fontSize: 12)))).toList(),
-          onChanged: isEnabled ? onChanged : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 10, color: widget.primaryColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
+            ),
+          ],
         ),
+        const SizedBox(height: 2),
+        Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: valueExists ? value : null,
+              hint: Text(
+                items.isEmpty ? 'Cargando...' : 'Seleccionar',
+                style: TextStyle(fontSize: 11, color: isEnabled ? Colors.grey.shade600 : Colors.grey.shade400),
+              ),
+              isExpanded: true,
+              icon: Icon(Icons.arrow_drop_down, size: 16, color: widget.primaryColor),
+              style: const TextStyle(fontSize: 11, color: Colors.black87),
+              dropdownColor: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              items: items.isEmpty
+                  ? [
+                      DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('No hay opciones', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                      ),
+                    ]
+                  : items.map((String item) {
+                      return DropdownMenuItem<String>(
+                        value: item,
+                        child: Text(item, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
+              onChanged: isEnabled ? onChanged : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20, vertical: 10),
+      decoration: BoxDecoration(
+        color: widget.primaryColor,
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(Icons.description, color: Colors.white, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isSmallScreen ? 'Rompebanco' : 'Formulario Rompebanco',
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+          _buildEstadoBadge(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEstadoBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isEditable ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isEditable ? Colors.green : Colors.grey, width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: isEditable ? Colors.green : Colors.grey,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            isEditable ? 'EDITABLE' : 'LECTURA',
+            style: TextStyle(
+              color: isEditable ? Colors.green : Colors.grey,
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildFooter() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20)),
@@ -810,8 +925,11 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
         children: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), minimumSize: Size.zero),
-            child: Text('Cancelar', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            child: Text('Cancelar', style: TextStyle(color: Colors.grey.shade700, fontSize: isSmallScreen ? 11 : 12)),
           ),
           const SizedBox(width: 8),
           if (isEditable)
@@ -820,11 +938,21 @@ class _DialogoFormularioRompebancoState extends State<DialogoFormularioRompebanc
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.primaryColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 minimumSize: Size.zero,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
               ),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.save, size: 14), SizedBox(width: 6), Text('Guardar', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))]),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.save, size: isSmallScreen ? 11 : 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Guardar',
+                    style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
             ),
         ],
       ),

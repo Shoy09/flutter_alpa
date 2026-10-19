@@ -39,8 +39,10 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
   String? selectedEquipo;
   String? selectedCodigo;
   String? selectedJefeGuardia;
+  String? selectedguardia;
   String? operador;
 
+  List<Map<String, dynamic>> _operadoresDisponibles = [];
   bool get operacionBloqueada => widget.operacionExistente != null;
 
   final String operadorEjemplo = "Juan Pérez";
@@ -49,6 +51,7 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
 
   List<String> equipos = [];
   List<String> jefesGuardia = [];
+  List<String> guardia = [];
 
   final Map<String, List<String>> codigosPorEquipo = {};
 
@@ -62,10 +65,29 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
     _cargarOperadorPorDni();
     _cargarEquipos();
     _cargarJefesGuardia();
+    _cargarguardia();
 
     if (widget.operacionExistente != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _cargarDatosOperacionExistente();
+      });
+    }
+  }
+
+  Future<void> _cargarguardia() async {
+    try {
+      final dbHelper = DatabaseHelper();
+      final guardiasDB = await dbHelper.getGuardias();
+
+      setState(() {
+        guardia = guardiasDB.map((g) => g.guardia).toList()..sort();
+      });
+
+      print("Guardias cargadas: $guardia");
+    } catch (e) {
+      print("Error cargando guardias: $e");
+      setState(() {
+        guardia = [];
       });
     }
   }
@@ -77,10 +99,21 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       selectedEquipo = widget.operacionExistente!['equipo'];
       selectedCodigo = widget.operacionExistente!['n_equipo'];
       selectedJefeGuardia = widget.operacionExistente!['jefe_guardia'];
+      selectedguardia = widget.operacionExistente!['guardia'];
 
-      // Actualizar códigos filtrados basado en el equipo seleccionado
       codigosFiltrados = codigosPorEquipo[selectedEquipo] ?? [];
     });
+  }
+
+  String _formatearOperador(Map<String, dynamic> usuario) {
+    final String apellidos = (usuario['apellidos'] ?? '').toString().trim();
+    final String nombres = (usuario['nombres'] ?? '').toString().trim();
+
+    if (apellidos.isEmpty && nombres.isEmpty) return '';
+    if (apellidos.isEmpty) return nombres.toUpperCase();
+    if (nombres.isEmpty) return apellidos.toUpperCase();
+
+    return '${apellidos.toUpperCase()}, ${nombres.toUpperCase()}';
   }
 
   Future<void> _cargarOperadorPorDni() async {
@@ -91,20 +124,75 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       final usuario = await dbHelper.getUserByDni(widget.dniUsuario!);
 
       if (usuario != null) {
-        setState(() {
-          operador = '${usuario['nombres']} ${usuario['apellidos']}';
-        });
-        print('Operador cargado: $operador');
+        final String empresa = usuario['empresa'] ?? '';
+
+        if (empresa.toUpperCase() == 'SEMINCO') {
+          await _cargarOperadoresSeminco();
+        } else {
+          setState(() {
+            operador = _formatearOperador(usuario);
+            _operadoresDisponibles = [];
+          });
+          print('Operador automático cargado: $operador (Empresa: $empresa)');
+        }
       } else {
         print('No se encontró usuario con DNI: ${widget.dniUsuario}');
         setState(() {
           operador = operadorEjemplo;
+          _operadoresDisponibles = [];
         });
       }
     } catch (e) {
       print('Error al cargar operador: $e');
       setState(() {
         operador = operadorEjemplo;
+        _operadoresDisponibles = [];
+      });
+    }
+  }
+
+  Future<void> _cargarOperadoresSeminco() async {
+    try {
+      final dbHelper = DatabaseHelper();
+      final List<Map<String, dynamic>> usuarios = await dbHelper.getAllUsuarios();
+
+      final usuarioActual = await dbHelper.getUserByDni(widget.dniUsuario!);
+      final String nombreCompletoActual = usuarioActual != null
+          ? _formatearOperador(usuarioActual)
+          : '';
+
+      List<Map<String, dynamic>> operadoresOrdenados = List.from(usuarios);
+      operadoresOrdenados.sort((a, b) {
+        final String nombreA = _formatearOperador(a);
+        final String nombreB = _formatearOperador(b);
+
+        if (nombreA == nombreCompletoActual) return -1;
+        if (nombreB == nombreCompletoActual) return 1;
+        return nombreA.compareTo(nombreB);
+      });
+
+      setState(() {
+        _operadoresDisponibles = operadoresOrdenados;
+
+        if (_operadoresDisponibles.isNotEmpty) {
+          final usuarioActualEncontrado = _operadoresDisponibles.firstWhere(
+            (op) => _formatearOperador(op) == nombreCompletoActual,
+            orElse: () => _operadoresDisponibles.first,
+          );
+          operador = _formatearOperador(usuarioActualEncontrado);
+        } else {
+          operador = 'Sin operadores disponibles';
+          _operadoresDisponibles = [];
+        }
+      });
+
+      print('Operadores de Seminco cargados: ${_operadoresDisponibles.length}');
+      print('Usuario actual seleccionado: $operador');
+    } catch (e) {
+      print('Error al cargar operadores de Seminco: $e');
+      setState(() {
+        _operadoresDisponibles = [];
+        operador = 'Error al cargar operadores';
       });
     }
   }
@@ -128,7 +216,6 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       for (var equipo in equiposFiltrados) {
         nombresEquipos.add(equipo.nombre);
 
-        // Guardar códigos por equipo
         codigosPorEquipo.putIfAbsent(equipo.nombre, () => []);
         if (!codigosPorEquipo[equipo.nombre]!.contains(equipo.codigo)) {
           codigosPorEquipo[equipo.nombre]!.add(equipo.codigo);
@@ -138,19 +225,43 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       setState(() {
         equipos = nombresEquipos.toList()..sort();
 
-        // Si hay una operación existente, cargar sus datos después de cargar equipos
         if (widget.operacionExistente != null) {
           selectedEquipo = widget.operacionExistente!['equipo'];
           selectedCodigo = widget.operacionExistente!['n_equipo'];
-
           codigosFiltrados = codigosPorEquipo[selectedEquipo] ?? [];
+        } else {
+          codigosFiltrados = _obtenerTodosLosCodigos();
+          // 🔥 Auto-seleccionar (ver _autoSelectSingleEquipo)
+          _autoSelectSingleEquipo();
         }
       });
 
       print('Equipos SCISSOR cargados: ${equipos.length}');
-
     } catch (e) {
       print("Error cargando equipos: $e");
+    }
+  }
+
+  List<String> _obtenerTodosLosCodigos() {
+    List<String> todosCodigos = [];
+    for (var codigos in codigosPorEquipo.values) {
+      todosCodigos.addAll(codigos);
+    }
+    return todosCodigos;
+  }
+
+  /// 🔥 Auto-selecciona el PRIMER equipo (o el único) y opcionalmente el código si es único
+  void _autoSelectSingleEquipo() {
+    if (equipos.isNotEmpty && selectedEquipo == null && !operacionBloqueada) {
+      selectedEquipo = equipos.first;
+      codigosFiltrados = codigosPorEquipo[selectedEquipo] ?? [];
+      _autoSelectSingleCodigo();
+    }
+  }
+
+  void _autoSelectSingleCodigo() {
+    if (codigosFiltrados.length == 1 && selectedCodigo == null && !operacionBloqueada) {
+      selectedCodigo = codigosFiltrados.first;
     }
   }
 
@@ -182,6 +293,7 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
           selectedEquipo = widget.operacionExistente!['equipo'];
           selectedCodigo = widget.operacionExistente!['n_equipo'];
           selectedJefeGuardia = widget.operacionExistente!['jefe_guardia'];
+          selectedguardia = widget.operacionExistente!['guardia'];
 
           codigosFiltrados = codigosPorEquipo[selectedEquipo] ?? [];
         });
@@ -190,7 +302,9 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
           selectedEquipo = null;
           selectedCodigo = null;
           selectedJefeGuardia = null;
-          codigosFiltrados = [];
+          selectedguardia = null;
+          codigosFiltrados = _obtenerTodosLosCodigos();
+          _autoSelectSingleEquipo();
         });
       }
     }
@@ -201,6 +315,7 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       _cargarEquipos(),
       _cargarJefesGuardia(),
       _cargarOperadorPorDni(),
+      _cargarguardia(),
     ]);
   }
 
@@ -227,39 +342,34 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
     );
   }
 
+  /// 🔥 Selección de layout por ancho
   Widget _buildFormFields() {
     return LayoutBuilder(
       builder: (context, constraints) {
         double cardWidth = constraints.maxWidth;
 
-        Map<String, double> fieldWeights = {
-          'fecha': 0.8,
-          'turno': 0.7,
-          'equipo': 1.0,
-          'codigo': 1.0,
-          'operador': 1.2,
-          'jefe': 1.2,
-        };
+        if (cardWidth < 600) {
+          return _buildMobileLayout();
+        } else if (cardWidth >= 600 && cardWidth < 900) {
+          return _buildTabletLayout();
+        } else {
+          return _buildDesktopLayout(cardWidth);
+        }
+      },
+    );
+  }
 
-        double scaleFactor = cardWidth > 900
-            ? 1.0
-            : cardWidth > 700
-                ? 0.9
-                : cardWidth > 500
-                    ? 0.8
-                    : 0.7;
-
-        return Wrap(
-          spacing: 10,
-          runSpacing: 12,
+  // 📱 MÓVIL: una columna
+  Widget _buildMobileLayout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Fila 1: Fecha y Turno
+        Row(
           children: [
-            _buildFlexibleField(
-              width: _calculateFieldWidth(cardWidth, fieldWeights['fecha']! * scaleFactor),
-              child: _buildFechaField(),
-            ),
-
-            _buildFlexibleField(
-              width: _calculateFieldWidth(cardWidth, fieldWeights['turno']! * scaleFactor),
+            Expanded(child: _buildFechaField()),
+            const SizedBox(width: 10),
+            Expanded(
               child: CustomMaterialDropdown(
                 label: 'Turno',
                 value: widget.selectedTurno,
@@ -270,53 +380,34 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
                 primaryColor: widget.primaryColor,
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 12),
 
-            _buildFlexibleField(
-              width: _calculateFieldWidth(cardWidth, fieldWeights['equipo']! * scaleFactor),
-              child: CustomMaterialDropdown(
-                label: 'Equipo',
-                value: selectedEquipo,
-                items: equipos,
-                onChanged: operacionBloqueada
-                    ? null
-                    : (value) {
-                        setState(() {
-                          selectedEquipo = value;
-                          selectedCodigo = null;
-                          codigosFiltrados = codigosPorEquipo[value] ?? [];
-                        });
-                      },
-                icon: Icons.precision_manufacturing,
-                hint: equipos.isEmpty ? 'Cargando...' : 'Equipo',
-                primaryColor: widget.primaryColor,
-              ),
-            ),
+        // Fila 2: Código (equipo oculto, auto)
+        CustomMaterialDropdown(
+          label: 'Código de equipo',
+          value: selectedCodigo,
+          items: codigosFiltrados,
+          onChanged: operacionBloqueada || selectedEquipo == null
+              ? null
+              : (value) {
+                  setState(() {
+                    selectedCodigo = value;
+                  });
+                },
+          icon: Icons.qr_code,
+          hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'Código de equipo',
+          primaryColor: widget.primaryColor,
+        ),
+        const SizedBox(height: 12),
 
-            _buildFlexibleField(
-              width: _calculateFieldWidth(cardWidth, fieldWeights['codigo']! * scaleFactor),
-              child: CustomMaterialDropdown(
-                label: 'Código',
-                value: selectedCodigo,
-                items: codigosFiltrados,
-                onChanged: operacionBloqueada || selectedEquipo == null
-                    ? null
-                    : (value) {
-                        setState(() {
-                          selectedCodigo = value;
-                        });
-                      },
-                icon: Icons.qr_code,
-                hint: 'Código',
-              ),
-            ),
-
-            _buildFlexibleField(
-              width: _calculateFieldWidth(cardWidth, fieldWeights['operador']! * scaleFactor),
-              child: _buildOperadorField(),
-            ),
-
-            _buildFlexibleField(
-              width: _calculateFieldWidth(cardWidth, fieldWeights['jefe']! * scaleFactor),
+        // Fila 3: Operador y Jefe Guardia
+        Row(
+          children: [
+            Expanded(child: _buildOperadorField()),
+            const SizedBox(width: 10),
+            Expanded(
               child: CustomMaterialDropdown(
                 label: 'Jefe Guardia',
                 value: selectedJefeGuardia,
@@ -330,13 +421,203 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
               ),
             ),
           ],
-        );
-      },
+        ),
+        const SizedBox(height: 12),
+
+        // Fila 4: Guardia
+        CustomMaterialDropdown(
+          label: 'Guardia',
+          value: selectedguardia,
+          items: guardia,
+          onChanged: operacionBloqueada
+              ? null
+              : (value) => setState(() => selectedguardia = value),
+          icon: Icons.map,
+          hint: guardia.isEmpty ? 'Cargando...' : 'Guardia',
+          primaryColor: widget.primaryColor,
+        ),
+      ],
+    );
+  }
+
+  // 📟 TABLET: mezcla de filas y columnas
+  Widget _buildTabletLayout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Fila 1: Fecha y Turno
+        Row(
+          children: [
+            Expanded(flex: 1, child: _buildFechaField()),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 1,
+              child: CustomMaterialDropdown(
+                label: 'Turno',
+                value: widget.selectedTurno,
+                items: turnos,
+                onChanged: operacionBloqueada ? null : widget.onTurnoChanged,
+                icon: Icons.access_time,
+                hint: 'Turno',
+                primaryColor: widget.primaryColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Fila 2: Código (ancho completo)
+        CustomMaterialDropdown(
+          label: 'Código de equipo',
+          value: selectedCodigo,
+          items: codigosFiltrados,
+          onChanged: operacionBloqueada || selectedEquipo == null
+              ? null
+              : (value) {
+                  setState(() {
+                    selectedCodigo = value;
+                  });
+                },
+          icon: Icons.qr_code,
+          hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'Código de equipo',
+          primaryColor: widget.primaryColor,
+        ),
+        const SizedBox(height: 16),
+
+        // Fila 3: Operador y Jefe Guardia
+        Row(
+          children: [
+            Expanded(child: _buildOperadorField()),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CustomMaterialDropdown(
+                label: 'Jefe Guardia',
+                value: selectedJefeGuardia,
+                items: jefesGuardia,
+                onChanged: operacionBloqueada
+                    ? null
+                    : (value) => setState(() => selectedJefeGuardia = value),
+                icon: Icons.person,
+                hint: jefesGuardia.isEmpty ? 'Cargando...' : 'Jefe',
+                primaryColor: widget.primaryColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Fila 4: Guardia (ancho completo)
+        CustomMaterialDropdown(
+          label: 'Guardia',
+          value: selectedguardia,
+          items: guardia,
+          onChanged: operacionBloqueada
+              ? null
+              : (value) => setState(() => selectedguardia = value),
+          icon: Icons.map,
+          hint: guardia.isEmpty ? 'Cargando...' : 'Guardia',
+          primaryColor: widget.primaryColor,
+        ),
+      ],
+    );
+  }
+
+  // 💻 DESKTOP: Wrap fluido con pesos
+  Widget _buildDesktopLayout(double cardWidth) {
+    Map<String, double> fieldWeights = {
+      'fecha': 1.5,
+      'turno': 1.5,
+      'codigo': 2.5,   // 🔥 Código ocupa más espacio (equipo oculto)
+      'operador': 2.0,
+      'jefe': 2.0,
+      'guardia': 1.5,
+    };
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 16,
+      children: [
+        _buildFlexibleField(
+          width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['fecha']!),
+          child: _buildFechaField(),
+        ),
+        _buildFlexibleField(
+          width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['turno']!),
+          child: CustomMaterialDropdown(
+            label: 'Turno',
+            value: widget.selectedTurno,
+            items: turnos,
+            onChanged: operacionBloqueada ? null : widget.onTurnoChanged,
+            icon: Icons.access_time,
+            hint: 'Turno',
+            primaryColor: widget.primaryColor,
+          ),
+        ),
+        _buildFlexibleField(
+          width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['codigo']!),
+          child: CustomMaterialDropdown(
+            label: 'Código de equipo',
+            value: selectedCodigo,
+            items: codigosFiltrados,
+            onChanged: operacionBloqueada || selectedEquipo == null
+                ? null
+                : (value) {
+                    setState(() {
+                      selectedCodigo = value;
+                    });
+                  },
+            icon: Icons.qr_code,
+            hint: codigosFiltrados.isEmpty ? 'Cargando...' : 'Código de equipo',
+            primaryColor: widget.primaryColor,
+          ),
+        ),
+        _buildFlexibleField(
+          width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['operador']!),
+          child: _buildOperadorField(),
+        ),
+        _buildFlexibleField(
+          width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['jefe']!),
+          child: CustomMaterialDropdown(
+            label: 'Jefe Guardia',
+            value: selectedJefeGuardia,
+            items: jefesGuardia,
+            onChanged: operacionBloqueada
+                ? null
+                : (value) => setState(() => selectedJefeGuardia = value),
+            icon: Icons.person,
+            hint: jefesGuardia.isEmpty ? 'Cargando...' : 'Jefe',
+            primaryColor: widget.primaryColor,
+          ),
+        ),
+        _buildFlexibleField(
+          width: _calculateFieldWidthDesktop(cardWidth, fieldWeights['guardia']!),
+          child: CustomMaterialDropdown(
+            label: 'Guardia',
+            value: selectedguardia,
+            items: guardia,
+            onChanged: operacionBloqueada
+                ? null
+                : (value) => setState(() => selectedguardia = value),
+            icon: Icons.map,
+            hint: guardia.isEmpty ? 'Cargando...' : 'Guardia',
+            primaryColor: widget.primaryColor,
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildFlexibleField({required double width, required Widget child}) {
     return SizedBox(width: width, child: child);
+  }
+
+  /// 🔥 Ahora son 6 campos visibles (equipo oculto)
+  double _calculateFieldWidthDesktop(double totalWidth, double weight) {
+    double totalWeights = 1.5 + 1.5 + 2.5 + 2.0 + 2.0 + 1.5; // = 11.0
+    double spacing = 12 * 5;   // 5 gaps entre 6 campos
+    double padding = 16 * 2;
+    double availableWidth = totalWidth - spacing - padding;
+    return (availableWidth * weight) / totalWeights;
   }
 
   Widget _buildFechaField() {
@@ -394,6 +675,61 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
   }
 
   Widget _buildOperadorField() {
+    bool isSeminco = _operadoresDisponibles.isNotEmpty;
+    bool isEnabled = !operacionBloqueada;
+
+    if (isSeminco) {
+      return InkWell(
+        onTap: isEnabled ? () => _mostrarSelectorOperador(context) : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isEnabled
+                  ? widget.primaryColor.withOpacity(0.5)
+                  : Colors.grey.shade300,
+            ),
+            borderRadius: BorderRadius.circular(8),
+            color: isEnabled ? Colors.white : Colors.grey.shade50,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Operador',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isEnabled ? widget.primaryColor : Colors.grey,
+                      ),
+                    ),
+                    Text(
+                      operador ?? 'Seleccionar operador',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: isEnabled ? Colors.black87 : Colors.grey,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_drop_down,
+                size: 20,
+                color: isEnabled ? widget.primaryColor : Colors.grey,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -425,6 +761,161 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
     );
   }
 
+  void _mostrarSelectorOperador(BuildContext context) {
+    String searchText = '';
+    final TextEditingController searchCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final List<Map<String, dynamic>> filtrados = searchText.isEmpty
+                ? _operadoresDisponibles
+                : _operadoresDisponibles.where((op) {
+                    final nombreCompleto =
+                        _formatearOperador(op).toLowerCase();
+                    return nombreCompleto.contains(searchText.toLowerCase());
+                  }).toList();
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: DraggableScrollableSheet(
+                initialChildSize: 0.6,
+                minChildSize: 0.4,
+                maxChildSize: 0.9,
+                expand: false,
+                builder: (ctx, scrollController) {
+                  return Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 10),
+                        Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Seleccionar operador',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: widget.primaryColor,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: searchCtrl,
+                                autofocus: true,
+                                onChanged: (v) =>
+                                    setModalState(() => searchText = v),
+                                decoration: InputDecoration(
+                                  hintText: 'Buscar operador...',
+                                  prefixIcon: Icon(Icons.search,
+                                      color: widget.primaryColor),
+                                  suffixIcon: searchText.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 18),
+                                          onPressed: () {
+                                            searchCtrl.clear();
+                                            setModalState(() => searchText = '');
+                                          },
+                                        )
+                                      : null,
+                                  filled: true,
+                                  fillColor: Colors.grey.shade100,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 0, horizontal: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: filtrados.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No se encontraron operadores',
+                                    style: TextStyle(
+                                        color: Colors.grey,
+                                        fontStyle: FontStyle.italic),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  controller: scrollController,
+                                  itemCount: filtrados.length,
+                                  itemBuilder: (ctx, i) {
+                                    final op = filtrados[i];
+                                    final nombreCompleto =
+                                        _formatearOperador(op);
+                                    final isSelected = nombreCompleto == operador;
+
+                                    return ListTile(
+                                      leading: CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: isSelected
+                                            ? widget.primaryColor
+                                            : Colors.grey.shade300,
+                                        child: const Icon(Icons.person,
+                                            color: Colors.white, size: 16),
+                                      ),
+                                      title: Text(
+                                        nombreCompleto,
+                                        style: TextStyle(
+                                          fontWeight: isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          color: isSelected
+                                              ? widget.primaryColor
+                                              : Colors.black87,
+                                        ),
+                                      ),
+                                      trailing: isSelected
+                                          ? Icon(Icons.check_circle,
+                                              color: widget.primaryColor)
+                                          : null,
+                                      onTap: () {
+                                        setState(() => operador = nombreCompleto);
+                                        Navigator.pop(ctx);
+                                      },
+                                    );
+                                  },
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildCreateButton() {
     return SizedBox(
       width: double.infinity,
@@ -452,14 +943,6 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
     );
   }
 
-  double _calculateFieldWidth(double totalWidth, double weight) {
-    double totalWeights = 0.8 + 0.7 + 1.0 + 1.0 + 1.2 + 1.2;
-    double spacing = 10 * 5;
-    double padding = 16 * 2;
-    double availableWidth = totalWidth - spacing - padding;
-    return (availableWidth * weight) / totalWeights;
-  }
-
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -481,8 +964,15 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
     if (widget.selectedTurno == null ||
         selectedEquipo == null ||
         selectedCodigo == null ||
-        selectedJefeGuardia == null) {
+        selectedJefeGuardia == null ||
+        selectedguardia == null) {
       _showSnackbar('Complete todos los campos', Colors.orange);
+      return;
+    }
+
+    // Validar operador para Seminco
+    if (_operadoresDisponibles.isNotEmpty && operador == null) {
+      _showSnackbar('Seleccione un operador', Colors.orange);
       return;
     }
 
@@ -492,6 +982,7 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       'n_equipo': selectedCodigo,
       'operador': operador ?? operadorEjemplo,
       'jefe_guardia': selectedJefeGuardia,
+      'guardia': selectedguardia,
       'fecha': widget.fechaActual,
     });
 
@@ -499,7 +990,10 @@ class _OperacionScissorCardState extends State<OperacionScissorCard> {
       selectedEquipo = null;
       selectedCodigo = null;
       selectedJefeGuardia = null;
-      codigosFiltrados = [];
+      selectedguardia = null;
+      _operadoresDisponibles = [];
+      codigosFiltrados = _obtenerTodosLosCodigos();
+      _autoSelectSingleEquipo();
     });
 
     _showSnackbar('Operación creada exitosamente', Colors.green);

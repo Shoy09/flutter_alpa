@@ -4,47 +4,47 @@ import 'package:i_miner/config/api/api_config.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/models/checklist_item.dart';
 
-
 class ApiServiceCheckList {
-  final DatabaseHelper _dbHelper = DatabaseHelper();
+  final http.Client? _client;
+  final Future<void> Function(List<CheckListItem>)? _guardarCatalogo;
 
-  /// Obtener checklist desde la API y guardarlo localmente
+  ApiServiceCheckList({
+    http.Client? client,
+    Future<void> Function(List<CheckListItem>)? guardarCatalogo,
+  }) : _client = client,
+       _guardarCatalogo = guardarCatalogo;
+
   Future<List<CheckListItem>> fetchCheckList(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.checklistEndpoint}'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
+    final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.checklistEndpoint}');
+    final headers = {'Authorization': 'Bearer $token'};
+    final response =
+        await (_client?.get(uri, headers: headers) ??
+            http.get(uri, headers: headers));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Error al cargar el checklist. Código: ${response.statusCode}',
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> responseData = json.decode(response.body);
-        List<CheckListItem> items = responseData
-            .map((data) => CheckListItem.fromJson(data))
-            .toList();
-
-        // Eliminar datos antiguos antes de insertar nuevos
-        await _dbHelper.deleteAllShared('checklist_items');
-
-        // Guardar en DB local sin el id
-        await saveCheckListToLocalDB(items);
-
-        return items;
-      } else {
-        throw Exception('Error al cargar el checklist. Código: ${response.statusCode}');
-      }
-    } catch (error) {
-      throw Exception('Error en la solicitud: $error');
     }
+    final data = json.decode(response.body);
+    if (data is! List) {
+      throw const FormatException('La API no devolvió una lista de checklist.');
+    }
+    final items = data.map((item) {
+      if (item is! Map<String, dynamic>) {
+        throw const FormatException('Ítem de checklist inválido.');
+      }
+      return CheckListItem.fromJson(item);
+    }).toList();
+    await saveCheckListToLocalDB(items);
+    return items;
   }
 
-  /// Guardar checklist en la base de datos local
+  /// Sustituye el catálogo y sus asignaciones en una sola transacción.
+  /// No borra ni actualiza las respuestas de operaciones ya registradas.
   Future<void> saveCheckListToLocalDB(List<CheckListItem> items) async {
-    for (var item in items) {
-      Map<String, dynamic> itemData = item.toMap();
-      itemData.remove('id'); // No insertar id si es autoincremental local
-      await _dbHelper.insertShared('checklist_items', itemData);
+    if (_guardarCatalogo != null) {
+      return _guardarCatalogo(items);
     }
+    await DatabaseHelper().reemplazarChecklistCatalogo(items);
   }
 }

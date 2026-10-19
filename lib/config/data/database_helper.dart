@@ -1,3 +1,5 @@
+import 'checklist_local_store.dart';
+import 'package:i_miner/models/checklist_item.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:bcrypt/bcrypt.dart';
@@ -30,8 +32,8 @@ class DatabaseHelper {
   static Database? _sharedDatabase;
   static String? _currentUserDni;
   static bool _isInitialized = false;
-  static const int _userDbVersion = 1;
-  static const int _sharedDbVersion = 1;
+  static const int _userDbVersion = 2;
+  static const int _sharedDbVersion = 2;
 
   DatabaseHelper._internal() {
     // Inicialización única para evitar múltiples llamadas
@@ -368,6 +370,7 @@ Hora_envio TEXT,
   turno TEXT,
   operador TEXT,
   jefe_guardia TEXT,
+  guardia TEXT,
   equipo TEXT,
   n_equipo TEXT,
   registros TEXT,
@@ -626,11 +629,17 @@ await db.execute('''
 
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-
-
-  
+Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  if (oldVersion < 2) {
+    final existeTabla = await _tablaExiste(db, 'Operacion_scissor');
+    if (existeTabla) {
+      final existeColumna = await _columnaExiste(db, 'Operacion_scissor', 'guardia');
+      if (!existeColumna) {
+        await db.execute('ALTER TABLE Operacion_scissor ADD COLUMN guardia TEXT');
+      }
+    }
   }
+}
 
   Future<void> _onCreateShared(Database db, int version) async {
     // Tabla de planes mensuales
@@ -798,14 +807,7 @@ CREATE TABLE Guardia (
 ''');
 
 //Tabla de checklist
-await db.execute('''
-  CREATE TABLE IF NOT EXISTS checklist_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    proceso TEXT NOT NULL,
-    categoria TEXT NOT NULL,
-    nombre TEXT NOT NULL
-  )
-''');
+await ChecklistLocalStore.crearOMigrar(db);
 
 //Tala de estados
     await db.execute('''CREATE TABLE EstadostBD(
@@ -1010,7 +1012,7 @@ await db.execute('''
     int oldVersion,
     int newVersion,
   ) async {
-    
+    if (oldVersion < 2) await ChecklistLocalStore.crearOMigrar(db);
   }
 
   
@@ -1269,14 +1271,14 @@ Future<void> _createUserDatabaseFromShared(String dni, Map<String, dynamic> user
 }
 
 //CHECKLIST
-Future<List<Map<String, dynamic>>> getCheckListByProceso(String proceso) async {
-  final db = await sharedDatabase;
-  final result = await db.query(
-    'checklist_items',
-    where: 'proceso = ?',
-    whereArgs: [proceso],
-  );
-  return result;
+Future<List<Map<String, dynamic>>> getCheckListByProceso(
+  String proceso, {String? codigoEquipo}
+) async {
+  return ChecklistLocalStore.consultar(await sharedDatabase, proceso, codigoEquipo: codigoEquipo);
+}
+
+Future<void> reemplazarChecklistCatalogo(List<CheckListItem> items) async {
+  await ChecklistLocalStore.reemplazar(await sharedDatabase, items);
 }
 
 Future<List<Map<String, dynamic>>> getChecklistTelemando() async {
@@ -2255,7 +2257,6 @@ Future<bool> updateOperacionByEstadoId(
     );
   }
 
-  // Crear estado RESERVA (código 401)
 Future<Map<String, dynamic>?> createReservaEstado(
   int operacionId,
   int numero,
@@ -2282,8 +2283,8 @@ Future<Map<String, dynamic>?> createReservaEstado(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401', // Código para RESERVA
+    'estado': 'DEMORA',
+    'codigo': '303',
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
     'operacion': {
@@ -2335,6 +2336,69 @@ Future<Map<String, dynamic>?> getUltimoEstadoByOperacionId(int operacionId) asyn
     print('Error obteniendo último estado: $e');
     return null;
   }
+}
+
+Future<List<Map<String, String>>> getHorometrosConError(int operacionId) async {
+  final db = await database;
+  final result = await db.query(
+    'Operacion_tal_largo',
+    columns: ['horometros'],
+    where: 'id = ?',
+    whereArgs: [operacionId],
+  );
+
+  if (result.isEmpty) return [];
+
+  final horometrosJson = result.first['horometros'] as String? ?? '{}';
+  final Map<String, dynamic> horometros = jsonDecode(horometrosJson);
+
+  final List<Map<String, String>> conError = [];
+
+  horometros.forEach((tipo, data) {
+    if (data is! Map) return;
+
+    final inicio = (data['inicio'] ?? 0).toDouble();
+    final finalVal = (data['final'] ?? 0).toDouble();
+
+    // ❌ inicio en 0
+    if (inicio == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El inicio es 0',
+      });
+      return;
+    }
+
+    // ❌ final en 0
+    if (finalVal == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El final es 0',
+      });
+      return;
+    }
+
+    // ❌ inicio > final
+    if (inicio > finalVal) {
+      conError.add({
+        'tipo': tipo,
+        'motivo':
+            'El inicio (${_formatNum(inicio)}) no puede ser mayor al final (${_formatNum(finalVal)})',
+      });
+      return;
+    }
+
+    // ✅ inicio == final → OK (permitido)
+    // ✅ inicio < final   → OK
+  });
+
+  return conError;
+}
+
+// Helper para mostrar números sin ".0"
+String _formatNum(double n) {
+  if (n % 1 == 0) return n.toInt().toString();
+  return n.toString();
 }
 
 //TALADRO HORIZONTAL INICIO--------------------------------------------------------------------------------------------------------------
@@ -3191,6 +3255,64 @@ Future<bool> updateHorometrosHorizontal(int operacionId, Map<String, dynamic> ho
   return updated > 0;
 }
 
+Future<List<Map<String, String>>> getHorometrosConErrorHorizontal(int operacionId) async {
+  final db = await database;
+  final result = await db.query(
+    'Operacion_tal_horizontal',
+    columns: ['horometros'],
+    where: 'id = ?',
+    whereArgs: [operacionId],
+  );
+
+  if (result.isEmpty) return [];
+
+  final horometrosJson = result.first['horometros'] as String? ?? '{}';
+  final Map<String, dynamic> horometros = jsonDecode(horometrosJson);
+
+  final List<Map<String, String>> conError = [];
+
+  horometros.forEach((tipo, data) {
+    if (data is! Map) return;
+
+    final inicio = (data['inicio'] ?? 0).toDouble();
+    final finalVal = (data['final'] ?? 0).toDouble();
+
+    // ❌ inicio en 0
+    if (inicio == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El inicio es 0',
+      });
+      return;
+    }
+
+    // ❌ final en 0
+    if (finalVal == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El final es 0',
+      });
+      return;
+    }
+
+    // ❌ inicio > final
+    if (inicio > finalVal) {
+      conError.add({
+        'tipo': tipo,
+        'motivo':
+            'El inicio (${_formatNum(inicio)}) no puede ser mayor al final (${_formatNum(finalVal)})',
+      });
+      return;
+    }
+
+    // ✅ inicio == final → OK (permitido)
+    // ✅ inicio < final   → OK
+  });
+
+  return conError;
+}
+
+
 //SOSTENIMIENTO INICIO---------------------------------------------------------------------------------------------------------------------------------------------
 Future<int> insertOperacionEmpernador(
   String fecha,
@@ -3211,6 +3333,7 @@ Future<int> insertOperacionEmpernador(
     'diesel': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
     'electrico': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
     'percusion': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
+    'empernador': {'inicio': 0, 'final': 0, 'op': true, 'inop': false},
   };
 
   // 🔥 aplicar valores de nube
@@ -3374,17 +3497,16 @@ Future<bool> updateHoraFinalEmpernador(int operacionId, int estadoId, String hor
   print("✔ Hora final actualizada para estado $tipoEstado: $horaFinal");
   return updated > 0;
 }
-
 Future<Map<String, dynamic>?> createEstadoEmpernador(
-  int operacionId, 
+  int operacionId,
   String estado,
-  String codigo, 
+  String codigo,
   String horaInicio, {
   String? horaFinal,
-  Map<String, dynamic>? operacion, // Ahora acepta todos los campos de perforación
+  Map<String, dynamic>? operacion,
 }) async {
   final db = await database;
-  
+
   // 1. Obtener el registro actual
   final result = await db.query(
     'Operacion_empernador',
@@ -3392,40 +3514,75 @@ Future<Map<String, dynamic>?> createEstadoEmpernador(
     where: 'id = ?',
     whereArgs: [operacionId],
   );
-  
+
   if (result.isEmpty) {
     return null;
   }
-  
+
   // 2. Parsear el JSON de registros existentes
-  String registrosJson = result.first['registros'] as String? ?? '[]';
+  String registrosJson =
+      result.first['registros'] as String? ?? '[]';
+
   List<dynamic> registros = jsonDecode(registrosJson);
-  
+
   // 3. Determinar el próximo número
   int nuevoNumero = 1;
+
   if (registros.isNotEmpty) {
     int ultimoNumero = registros.last['numero'] ?? 0;
     nuevoNumero = ultimoNumero + 1;
   }
-  
+
   // 4. Crear el nuevo estado con ID único
-  int nuevoId = DateTime.now().millisecondsSinceEpoch + registros.length;
-  
-  // Estructura completa del objeto operacion con todos los campos
-  Map<String, dynamic> operacionCompleta = {
-  'nivel': operacion?['nivel'] ?? '',
-  'tipo_labor': operacion?['tipo_labor'] ?? '',
-  'labor': operacion?['labor'] ?? '',
-  'ala': operacion?['ala'] ?? '',
-  'tipo_pernos': operacion?['tipo_pernos'] ?? '',
-  'log_pernos': operacion?['log_pernos'] ?? '',
-  'n_pernos_instalados': operacion?['n_pernos_instalados'] ?? '',
-  'tipo_malla': operacion?['tipo_malla'] ?? '',
-  'mt52_malla': operacion?['mt52_malla'] ?? '',
-  'sistematico_puntual': operacion?['sistematico_puntual'] ?? '',
-  'observaciones': operacion?['observaciones'] ?? '',
+  int nuevoId =
+      DateTime.now().millisecondsSinceEpoch + registros.length;
+
+  // 5. Construir PERNO
+  Map<String, dynamic> perno = {
+    'tipo_pernos': operacion?['tipo_pernos'] ?? '',
+    'log_pernos': operacion?['log_pernos'] ?? '',
+    'n_pernos_instalados':
+        operacion?['n_pernos_instalados'] ?? '',
+    'sistematico_puntual':
+        operacion?['sistematico_puntual'] ?? '',
+  };
+
+// 7. Construir PERFORACION
+  Map<String, dynamic> perforacion = {
+  'n_taladros': operacion?['n_taladros'] ?? 0,
+  'longitud_perforacion': operacion?['longitud_perforacion'] ?? 0.0,
+  //'tipo_perforacion': operacion?['tipo_perforacion'] ?? '',
 };
-  
+
+  // 6. Construir MALLA
+  Map<String, dynamic> malla = {
+    'tipo_malla': operacion?['tipo_malla'] ?? '',
+    'mt52_malla': operacion?['mt52_malla'] ?? '',
+    
+  };
+
+  // 7. Estructura completa de la operación
+  Map<String, dynamic> operacionCompleta = {
+    // Ubicación
+    'nivel': operacion?['nivel'] ?? '',
+    'tipo_labor': operacion?['tipo_labor'] ?? '',
+    'labor': operacion?['labor'] ?? '',
+    'ala': operacion?['ala'] ?? '',
+    'tipo_perforacion': operacion?['tipo_perforacion'] ?? '',
+    // Perno
+    'perno': perno,
+
+    // Malla
+    'malla': malla,
+
+    // 🔥 Perforación
+  'perforacion': perforacion,
+
+    // Observaciones
+    'observaciones': operacion?['observaciones'] ?? '',
+  };
+
+  // 8. Crear el nuevo estado
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': nuevoNumero,
@@ -3435,11 +3592,11 @@ Future<Map<String, dynamic>?> createEstadoEmpernador(
     'hora_final': horaFinal,
     'operacion': operacionCompleta,
   };
-  
-  // 5. Agregar al array
+
+  // 9. Agregar al array
   registros.add(nuevoEstado);
-  
-  // 6. Guardar en la base de datos
+
+  // 10. Guardar en la base de datos
   await db.update(
     'Operacion_empernador',
     {
@@ -3448,7 +3605,7 @@ Future<Map<String, dynamic>?> createEstadoEmpernador(
     where: 'id = ?',
     whereArgs: [operacionId],
   );
-  
+
   return nuevoEstado;
 }
 
@@ -3767,8 +3924,8 @@ Future<Map<String, dynamic>?> createReservaEstadoEmpernador(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401', // Código para RESERVA
+    'estado': 'DEMORA',
+    'codigo': '303', // Código para RESERVA
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
     'operacion': {
@@ -4044,6 +4201,69 @@ Future<bool> updateHorometrosEmpernador(int operacionId, Map<String, dynamic> ho
   );
   
   return updated > 0;
+}
+
+
+Future<List<Map<String, String>>> getHorometrosConErrorEmpernador(int operacionId) async {
+  final db = await database;
+  final result = await db.query(
+    'Operacion_empernador',
+    columns: ['horometros'],
+    where: 'id = ?',
+    whereArgs: [operacionId],
+  );
+
+  if (result.isEmpty) return [];
+
+  final horometrosJson = result.first['horometros'] as String? ?? '{}';
+  final Map<String, dynamic> horometros = jsonDecode(horometrosJson);
+
+  final List<Map<String, String>> conError = [];
+
+  // 🔥 Tipos de horómetro que PERMITEN 0 (inicio y final)
+  const tiposQuePermitenCero = {'empernador'};
+
+  horometros.forEach((tipo, data) {
+    if (data is! Map) return;
+
+    final inicio = (data['inicio'] ?? 0).toDouble();
+    final finalVal = (data['final'] ?? 0).toDouble();
+
+    final permiteCero = tiposQuePermitenCero.contains(tipo);
+
+    // ❌ inicio en 0 (solo si el tipo NO permite cero)
+    if (!permiteCero && inicio == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El inicio es 0',
+      });
+      return;
+    }
+
+    // ❌ final en 0 (solo si el tipo NO permite cero)
+    if (!permiteCero && finalVal == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El final es 0',
+      });
+      return;
+    }
+
+    // ❌ inicio > final (aplica SIEMPRE, incluso para empernador)
+    if (inicio > finalVal) {
+      conError.add({
+        'tipo': tipo,
+        'motivo':
+            'El inicio (${_formatNum(inicio)}) no puede ser mayor al final (${_formatNum(finalVal)})',
+      });
+      return;
+    }
+
+    // ✅ inicio == final → OK
+    // ✅ inicio < final   → OK
+  });
+
+  return conError;
 }
 
 //CARGUIO INICIO SCOOPS---------------------------------------------------------------------------------------------------------------------------------------------
@@ -5030,6 +5250,65 @@ Future<bool> updateProgramaTrabajoCarguio(
 
   return updated > 0;
 }
+
+
+Future<List<Map<String, String>>> getHorometrosConErrorCarguio(int operacionId) async {
+  final db = await database;
+  final result = await db.query(
+    'Operacion_carguio',
+    columns: ['horometros'],
+    where: 'id = ?',
+    whereArgs: [operacionId],
+  );
+
+  if (result.isEmpty) return [];
+
+  final horometrosJson = result.first['horometros'] as String? ?? '{}';
+  final Map<String, dynamic> horometros = jsonDecode(horometrosJson);
+
+  final List<Map<String, String>> conError = [];
+
+  horometros.forEach((tipo, data) {
+    if (data is! Map) return;
+
+    final inicio = (data['inicio'] ?? 0).toDouble();
+    final finalVal = (data['final'] ?? 0).toDouble();
+
+    // ❌ inicio en 0
+    if (inicio == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El inicio es 0',
+      });
+      return;
+    }
+
+    // ❌ final en 0
+    if (finalVal == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El final es 0',
+      });
+      return;
+    }
+
+    // ❌ inicio > final
+    if (inicio > finalVal) {
+      conError.add({
+        'tipo': tipo,
+        'motivo':
+            'El inicio (${_formatNum(inicio)}) no puede ser mayor al final (${_formatNum(finalVal)})',
+      });
+      return;
+    }
+
+    // ✅ inicio == final → OK (permitido)
+    // ✅ inicio < final   → OK
+  });
+
+  return conError;
+}
+
 
 //VOLQUETESS INICIO---------------------------------------------------------------------------------------------------------------------------------------------
 Future<int> insertOperacionVolquetes(
@@ -6414,8 +6693,8 @@ Future<Map<String, dynamic>?> createReservaEstadoDumper(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401',
+    'estado': 'DEMORA',
+    'codigo': '303',
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
     'operacion': {
@@ -7417,8 +7696,8 @@ Future<Map<String, dynamic>?> createReservaEstadoRompeBaco(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401',
+    'estado': 'DEMORA',
+    'codigo': '303',
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
     'operacion': {
@@ -8318,8 +8597,8 @@ Future<Map<String, dynamic>?> createReservaEstadoScalamin(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401',
+    'estado': 'DEMORA',
+    'codigo': '303',
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
     'operacion': {
@@ -8532,6 +8811,63 @@ Future<bool> deleteEstadoScalamin(int operacionId, int estadoId) async {
   return updated > 0;
 }
 
+Future<List<Map<String, String>>> getHorometrosConErrorScalamin(int operacionId) async {
+  final db = await database;
+  final result = await db.query(
+    'Operacion_Scalamin',
+    columns: ['horometros'],
+    where: 'id = ?',
+    whereArgs: [operacionId],
+  );
+
+  if (result.isEmpty) return [];
+
+  final horometrosJson = result.first['horometros'] as String? ?? '{}';
+  final Map<String, dynamic> horometros = jsonDecode(horometrosJson);
+
+  final List<Map<String, String>> conError = [];
+
+  horometros.forEach((tipo, data) {
+    if (data is! Map) return;
+
+    final inicio = (data['inicio'] ?? 0).toDouble();
+    final finalVal = (data['final'] ?? 0).toDouble();
+
+    // ❌ inicio en 0
+    if (inicio == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El inicio es 0',
+      });
+      return;
+    }
+
+    // ❌ final en 0
+    if (finalVal == 0) {
+      conError.add({
+        'tipo': tipo,
+        'motivo': 'El final es 0',
+      });
+      return;
+    }
+
+    // ❌ inicio > final
+    if (inicio > finalVal) {
+      conError.add({
+        'tipo': tipo,
+        'motivo':
+            'El inicio (${_formatNum(inicio)}) no puede ser mayor al final (${_formatNum(finalVal)})',
+      });
+      return;
+    }
+
+    // ✅ inicio == final → OK (permitido)
+    // ✅ inicio < final   → OK
+  });
+
+  return conError;
+}
+
 Future<bool> updateControlLlantasScalamin(
   int operacionId,
   Map<String, dynamic> controlLlantas,
@@ -8604,9 +8940,10 @@ Future<int> insertOperacionScissor(
   String operador,
   String jefeGuardia,
   String equipo,
-  String nEquipo, {
+  String nEquipo,
+  String guardia, {                          // 🔥 NUEVO parámetro
   List<Map<String, dynamic>>? checkListJson,
-  List<Map<String, dynamic>>? horometrosBase, // 🔥 NUEVO
+  List<Map<String, dynamic>>? horometrosBase,
 }) async {
 
   final db = await database;
@@ -8660,6 +8997,7 @@ Future<int> insertOperacionScissor(
       'turno': turno,
       'operador': operador,
       'jefe_guardia': jefeGuardia,
+      'guardia': guardia,                   // 🔥 NUEVO campo
       'equipo': equipo,
       'n_equipo': nEquipo,
       'horometros': jsonEncode(horometrosJson),
@@ -8667,7 +9005,7 @@ Future<int> insertOperacionScissor(
       'check_list': checkListStr,
       'control_llantas': jsonEncode(controlLlantasJson),
       'estado': 'activo',
-      'envio': 0
+      'envio': 0,
     },
   );
 }
@@ -8819,16 +9157,19 @@ Future<Map<String, dynamic>?> createEstadoScissor(
 
   /// NUEVA estructura operación (origen / destino)
   Map<String, dynamic> operacionSimple = {
-    'origen_nivel': operacion?['origen_nivel'] ?? '',
-    'origen_tipo_labor': operacion?['origen_tipo_labor'] ?? '',
-    'origen_labor': operacion?['origen_labor'] ?? '',
-    'origen_ala': operacion?['origen_ala'] ?? '',
+    // UBICACIÓN
+    'labor': operacion?['labor'] ?? '',
+    'destino': operacion?['destino'] ?? '',
 
-    'destino_nivel': operacion?['destino_nivel'] ?? '',
-    'destino_tipo_labor': operacion?['destino_tipo_labor'] ?? '',
-    'destino_labor': operacion?['destino_labor'] ?? '',
-    'destino_ala': operacion?['destino_ala'] ?? '',
+    // N° METROS
+    'ducto': operacion?['ducto'] ?? '',
+    'cable': operacion?['cable'] ?? '',
+    'tuberia': operacion?['tuberia'] ?? '',
 
+    // TIPO DE LABOR
+    'tipo_labor': operacion?['tipo_labor'] ?? '',
+
+    // OBSERVACIONES
     'observaciones': operacion?['observaciones'] ?? '',
   };
 
@@ -8936,18 +9277,19 @@ Future<Map<String, dynamic>> getOperacionByEstadoIdScissor(
     whereArgs: [operacionId],
   );
 
+  // 🔥 Estructura por defecto con los NUEVOS campos
+  Map<String, dynamic> defaultData = {
+    'labor': '',
+    'destino': '',
+    'ducto': '',
+    'cable': '',
+    'tuberia': '',
+    'tipo_labor': '',
+    'observaciones': '',
+  };
+
   if (result.isEmpty) {
-    return {
-      'origen_nivel': '',
-      'origen_tipo_labor': '',
-      'origen_labor': '',
-      'origen_ala': '',
-      'destino_nivel': '',
-      'destino_tipo_labor': '',
-      'destino_labor': '',
-      'destino_ala': '',
-      'observaciones': '',
-    };
+    return defaultData;
   }
 
   String registrosJson = result.first['registros'] as String? ?? '[]';
@@ -8963,36 +9305,27 @@ Future<Map<String, dynamic>> getOperacionByEstadoIdScissor(
     if (estadoEncontrado != null &&
         estadoEncontrado.containsKey('operacion')) {
 
-      return Map<String, dynamic>.from(estadoEncontrado['operacion']);
+      Map<String, dynamic> data =
+          Map<String, dynamic>.from(estadoEncontrado['operacion']);
+
+      // 🔥 Compatibilidad con registros viejos (origen_* / destino_*)
+      return {
+        'labor': data['labor'] ?? data['origen_labor'] ?? '',
+        'destino': data['destino'] ?? data['destino_labor'] ?? '',
+        'ducto': data['ducto'] ?? '',
+        'cable': data['cable'] ?? '',
+        'tuberia': data['tuberia'] ?? '',
+        'tipo_labor': data['tipo_labor'] ?? data['origen_tipo_labor'] ?? '',
+        'observaciones': data['observaciones'] ?? '',
+      };
 
     } else {
-      return {
-        'origen_nivel': '',
-        'origen_tipo_labor': '',
-        'origen_labor': '',
-        'origen_ala': '',
-        'destino_nivel': '',
-        'destino_tipo_labor': '',
-        'destino_labor': '',
-        'destino_ala': '',
-        'observaciones': '',
-      };
+      return defaultData;
     }
 
   } catch (e) {
     print('Error decodificando registros: $e');
-
-    return {
-      'origen_nivel': '',
-      'origen_tipo_labor': '',
-      'origen_labor': '',
-      'origen_ala': '',
-      'destino_nivel': '',
-      'destino_tipo_labor': '',
-      'destino_labor': '',
-      'destino_ala': '',
-      'observaciones': '',
-    };
+    return defaultData;
   }
 }
 
@@ -9186,21 +9519,18 @@ Future<Map<String, dynamic>?> createReservaEstadoScissor(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401',
+    'estado': 'DEMORA',
+    'codigo': '303',
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
+    // 🔥 NUEVA estructura — reserva sin datos de operación
     'operacion': {
-      'origen_nivel': '',
-      'origen_tipo_labor': '',
-      'origen_labor': '',
-      'origen_ala': '',
-
-      'destino_nivel': '',
-      'destino_tipo_labor': '',
-      'destino_labor': '',
-      'destino_ala': '',
-
+      'labor': '',
+      'destino': '',
+      'ducto': '',
+      'cable': '',
+      'tuberia': '',
+      'tipo_labor': '',
       'observaciones': '',
     },
   };
@@ -10072,8 +10402,8 @@ Future<Map<String, dynamic>?> createReservaEstadoAnfochanger(
   Map<String, dynamic> nuevoEstado = {
     'id': nuevoId,
     'numero': numero,
-    'estado': 'RESERVA',
-    'codigo': '401',
+    'estado': 'DEMORA',
+    'codigo': '303',
     'hora_inicio': horaInicio,
     'hora_final': horaFinal,
     'operacion': {

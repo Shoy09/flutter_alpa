@@ -99,6 +99,17 @@ void dispose() {
     }
   }
 
+  String _formatearOperador(Map<String, dynamic> usuario) {
+  final String apellidos = (usuario['apellidos'] ?? '').toString().trim();
+  final String nombres = (usuario['nombres'] ?? '').toString().trim();
+
+  if (apellidos.isEmpty && nombres.isEmpty) return '';
+  if (apellidos.isEmpty) return nombres.toUpperCase();
+  if (nombres.isEmpty) return apellidos.toUpperCase();
+
+  return '${apellidos.toUpperCase()}, ${nombres.toUpperCase()}';
+}
+
 Future<void> _cargarOperadorPorDni() async {
   if (widget.dniUsuario == null) return;
 
@@ -115,8 +126,8 @@ Future<void> _cargarOperadorPorDni() async {
         await _cargarOperadoresSeminco();
       } else {
         setState(() {
-          operador = '$nombres $apellidos';
-          _operadoresDisponibles = [];
+          operador = _formatearOperador(usuario);
+    _operadoresDisponibles = [];;
         });
         print('Operador automático cargado: $operador (Empresa: $empresa)');
       }
@@ -140,37 +151,36 @@ Future<void> _cargarOperadoresSeminco() async {
   try {
     final dbHelper = DatabaseHelper();
     final List<Map<String, dynamic>> usuarios = await dbHelper.getAllUsuarios();
-    
+
     final usuarioActual = await dbHelper.getUserByDni(widget.dniUsuario!);
-    final String nombreCompletoActual = usuarioActual != null 
-        ? '${usuarioActual['nombres']} ${usuarioActual['apellidos']}'
-        : '';
-    
+    final String nombreFormateadoActual =
+        usuarioActual != null ? _formatearOperador(usuarioActual) : '';
+
     List<Map<String, dynamic>> operadoresOrdenados = List.from(usuarios);
     operadoresOrdenados.sort((a, b) {
-      final String nombreA = '${a['nombres']} ${a['apellidos']}';
-      final String nombreB = '${b['nombres']} ${b['apellidos']}';
-      
-      if (nombreA == nombreCompletoActual) return -1;
-      if (nombreB == nombreCompletoActual) return 1;
+      final String nombreA = _formatearOperador(a);
+      final String nombreB = _formatearOperador(b);
+
+      if (nombreA == nombreFormateadoActual) return -1;
+      if (nombreB == nombreFormateadoActual) return 1;
       return nombreA.compareTo(nombreB);
     });
-    
+
     setState(() {
       _operadoresDisponibles = operadoresOrdenados;
-      
+
       if (_operadoresDisponibles.isNotEmpty) {
         final usuarioActualEncontrado = _operadoresDisponibles.firstWhere(
-          (op) => '${op['nombres']} ${op['apellidos']}' == nombreCompletoActual,
+          (op) => _formatearOperador(op) == nombreFormateadoActual,
           orElse: () => _operadoresDisponibles.first,
         );
-        operador = '${usuarioActualEncontrado['nombres']} ${usuarioActualEncontrado['apellidos']}';
+        operador = _formatearOperador(usuarioActualEncontrado);
       } else {
         operador = 'Sin operadores disponibles';
         _operadoresDisponibles = [];
       }
     });
-    
+
     print('Operadores de Seminco cargados: ${_operadoresDisponibles.length}');
     print('Usuario actual seleccionado: $operador');
   } catch (e) {
@@ -189,7 +199,7 @@ Future<void> _cargarOperadoresSeminco() async {
       final dbHelper = DatabaseHelper();
       equiposCompletos = await dbHelper.getEquipos();
 
-      String tipoOperacion = 'EMPERNADOR';
+      String tipoOperacion = 'SCALAMIN';
 
       List<Equipo> equiposFiltrados = equiposCompletos
           .where((e) => e.proceso == tipoOperacion)
@@ -759,12 +769,11 @@ void _mostrarSelectorOperador(BuildContext context) {
       return StatefulBuilder(
         builder: (ctx, setModalState) {
           final List<Map<String, dynamic>> filtrados = searchText.isEmpty
-              ? _operadoresDisponibles
-              : _operadoresDisponibles.where((op) {
-                  final nombreCompleto =
-                      '${op['nombres']} ${op['apellidos']}'.toLowerCase();
-                  return nombreCompleto.contains(searchText.toLowerCase());
-                }).toList();
+    ? _operadoresDisponibles
+    : _operadoresDisponibles.where((op) {
+        final nombreFormateado = _formatearOperador(op).toLowerCase();
+        return nombreFormateado.contains(searchText.toLowerCase());
+      }).toList();
 
           return Padding(
             padding: EdgeInsets.only(
@@ -851,41 +860,33 @@ void _mostrarSelectorOperador(BuildContext context) {
                                 controller: scrollController,
                                 itemCount: filtrados.length,
                                 itemBuilder: (ctx, i) {
-                                  final op = filtrados[i];
-                                  final nombreCompleto =
-                                      '${op['nombres']} ${op['apellidos']}';
-                                  final isSelected = nombreCompleto == operador;
+  final op = filtrados[i];
+  final nombreFormateado = _formatearOperador(op);
+  final isSelected = nombreFormateado == operador;
 
-                                  return ListTile(
-                                    leading: CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: isSelected
-                                          ? widget.primaryColor
-                                          : Colors.grey.shade300,
-                                      child: const Icon(Icons.person,
-                                          color: Colors.white, size: 16),
-                                    ),
-                                    title: Text(
-                                      nombreCompleto,
-                                      style: TextStyle(
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isSelected
-                                            ? widget.primaryColor
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                    trailing: isSelected
-                                        ? Icon(Icons.check_circle,
-                                            color: widget.primaryColor)
-                                        : null,
-                                    onTap: () {
-                                      setState(() => operador = nombreCompleto);
-                                      Navigator.pop(ctx);
-                                    },
-                                  );
-                                },
+  return ListTile(
+    leading: CircleAvatar(
+      radius: 16,
+      backgroundColor:
+          isSelected ? widget.primaryColor : Colors.grey.shade300,
+      child: const Icon(Icons.person, color: Colors.white, size: 16),
+    ),
+    title: Text(
+      nombreFormateado,
+      style: TextStyle(
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        color: isSelected ? widget.primaryColor : Colors.black87,
+      ),
+    ),
+    trailing: isSelected
+        ? Icon(Icons.check_circle, color: widget.primaryColor)
+        : null,
+    onTap: () {
+      setState(() => operador = nombreFormateado);
+      Navigator.pop(ctx);
+    },
+  );
+},
                               ),
                       ),
                       const SizedBox(height: 8),

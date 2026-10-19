@@ -6,6 +6,11 @@ class ExportarScissorService {
 
   ExportarScissorService(this.dbHelper);
 
+  String _getHoraActual() {
+    final now = DateTime.now();
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+  }
+
   Future<List<Map<String, dynamic>>> prepararDatosParaExportar(
     Set<int> selectedItems,
     List<Map<String, dynamic>> operacionData,
@@ -49,6 +54,7 @@ class ExportarScissorService {
       final checklist = parseList(operacion['check_list']);
       final condiciones = parseMap(operacion['condiciones_equipo']);
       final controlLlantas = parseMap(operacion['control_llantas']);
+      final horaEnvio = _getHoraActual();
 
       /// 🔥 OBJETO FINAL (PLANO para API)
       jsonDataList.add({
@@ -58,12 +64,14 @@ class ExportarScissorService {
         "fecha": operacion['fecha'] ?? "",
         "turno": operacion['turno'] ?? "",
         "operador": operacion['operador'] ?? "",
+        "guardia": operacion['guardia'] ?? "",
         "jefe_guardia": operacion['jefe_guardia'] ?? "",
         "equipo": operacion['equipo'] ?? "",
         "n_equipo": operacion['n_equipo'] ?? "",
 
         "estado": operacion['estado'] ?? "activo",
         "envio": operacion['envio'] ?? 0,
+        "Hora_envio": horaEnvio,
 
         /// 🔥 TODO STRING (porque tu API usa TEXT)
         "registros": jsonEncode(registros),

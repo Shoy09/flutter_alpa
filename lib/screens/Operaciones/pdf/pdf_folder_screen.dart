@@ -17,6 +17,8 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
   List<CarpetaModel> _carpetas = [];
   Map<int, List<PdfModel>> _pdfsPorCarpeta = {};
   bool _isLoading = true;
+  bool _requestInProgress = false;
+  String? _loadError;
 
   @override
   void initState() {
@@ -25,13 +27,20 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
   }
 
   Future<void> _loadCarpetas() async {
-    setState(() => _isLoading = true);
+    if (_requestInProgress) return;
+    _requestInProgress = true;
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
 
     try {
       final carpetasData = await _dbHelper.getAllCarpetas();
       final pdfsData = await _dbHelper.getAllPdfs();
 
-      final carpetas = carpetasData.map((d) => CarpetaModel.fromMap(d)).toList();
+      final carpetas = carpetasData
+          .map((d) => CarpetaModel.fromMap(d))
+          .toList();
       final pdfs = pdfsData.map((d) => PdfModel.fromMap(d)).toList();
 
       // Agrupar PDFs por carpeta_id
@@ -40,14 +49,22 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
         agrupado.putIfAbsent(pdf.carpetaId, () => []).add(pdf);
       }
 
+      if (!mounted) return;
       setState(() {
         _carpetas = carpetas;
         _pdfsPorCarpeta = agrupado;
       });
     } catch (e) {
-      print('Error cargando carpetas: $e');
+      debugPrint('Error cargando carpetas PDF: ${e.runtimeType}');
+      if (mounted) {
+        setState(
+          () => _loadError =
+              'No se pudieron cargar los documentos. Intenta actualizar.',
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      _requestInProgress = false;
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -62,15 +79,22 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadCarpetas,
+            onPressed: _isLoading ? null : _loadCarpetas,
           ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _loadError != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(_loadError!, textAlign: TextAlign.center),
+              ),
+            )
           : _carpetas.isEmpty
-              ? _buildEmptyState()
-              : _buildFolderList(),
+          ? _buildEmptyState()
+          : _buildFolderList(),
     );
   }
 
@@ -120,10 +144,8 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => PdfDetailScreen(
-                carpeta: carpeta,
-                pdfs: pdfs,
-              ),
+              builder: (context) =>
+                  PdfDetailScreen(carpeta: carpeta, pdfs: pdfs),
             ),
           );
         },
@@ -135,7 +157,7 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1B5E6B).withOpacity(0.08),
+                  color: const Color(0xFF1B5E6B).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -166,7 +188,10 @@ class _PdfFolderScreenState extends State<PdfFolderScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1B5E6B),
                   borderRadius: BorderRadius.circular(20),

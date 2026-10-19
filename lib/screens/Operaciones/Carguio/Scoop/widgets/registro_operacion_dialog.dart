@@ -62,36 +62,49 @@ List<String> _generateTimeIntervals(String turno) {
   List<String> times = [];
 
   if (turno == "DÍA") {
-    // Turno día: 06:30 - 17:25 (en 24h)
-    for (int hour = 6; hour <= 16; hour++) {
-      int startMinute = (hour == 6) ? 30 : 0;
-      for (int minute = startMinute; minute < 60; minute += 5) {
-        if (hour == 16 && minute > 55) break;
-        String time24 = "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
-        times.add(_formatTo12Hour(time24)); // Convertir a 12h
-      }
-    }
-  } else {
-    // Turno noche: 18:30 - 05:25 (en 24h)
-    // Parte 1: 18:30 - 23:55
-    for (int hour = 18; hour < 24; hour++) {
-      int startMinute = (hour == 18) ? 30 : 0;
-      for (int minute = startMinute; minute < 60; minute += 5) {
-        String time24 = "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+    // Turno día: 06:30 - 17:55
+    for (int hour = 6; hour <= 17; hour++) {
+      for (int minute = 0; minute < 60; minute += 5) {
+        // Saltar 06:00, 06:05, 06:10, 06:15, 06:20, 06:25
+        if (hour == 6 && minute < 30) continue;
+        // Cortar en 17:55
+        if (hour == 17 && minute > 25) break;
+
+        String time24 =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
         times.add(_formatTo12Hour(time24));
       }
     }
-    
-    // Parte 2: 00:00 - 05:25
-    for (int hour = 0; hour <= 4; hour++) {
+  } else {
+    // Turno noche: 18:30 - 05:55
+
+    // Parte 1: 18:30 - 23:55
+    for (int hour = 18; hour < 24; hour++) {
       for (int minute = 0; minute < 60; minute += 5) {
-        if (hour == 4 && minute > 55) break;
-        String time24 = "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+        // Saltar 18:00, 18:05, 18:10, 18:15, 18:20, 18:25
+        if (hour == 18 && minute < 30) continue;
+
+        String time24 =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
+        times.add(_formatTo12Hour(time24));
+      }
+    }
+
+    // Parte 2: 00:00 - 05:55
+    for (int hour = 0; hour <= 5; hour++) {
+      for (int minute = 0; minute < 60; minute += 5) {
+        if (hour == 5 && minute > 25) break;
+
+        String time24 =
+            "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+
         times.add(_formatTo12Hour(time24));
       }
     }
   }
-  
+
   return times;
 }
 
@@ -172,18 +185,24 @@ List<String> _getValidTimeRangeForEdit() {
 bool _isValidTimeForShift(String time12h, String shift) {
   try {
     String time24h = _formatTo24Hour(time12h);
+
     final hour = int.parse(time24h.split(':')[0]);
     final minute = int.parse(time24h.split(':')[1]);
 
     if (shift == "DÍA") {
-      if (hour < 6 || hour > 18) return false;
-      if (hour == 6 && minute < 30) return false;
-      if (hour == 18 && minute > 55) return false;
+      // 06:30 AM - 05:55 PM
+      if (hour < 6 || hour > 17) return false;
+      if (hour == 6 && minute < 30) return false; // ⬅️ nuevo
+      if (hour == 17 && minute > 25) return false;
     } else {
-      if (hour > 6 && hour < 18) return false;
-      if (hour == 18 && minute < 30) return false;
-      if (hour == 6 && minute > 55) return false;
+      // 06:30 PM - 05:55 AM
+
+      // Bloquear rango inválido 06:00 AM -> 06:29 PM
+      if (hour > 5 && hour < 18) return false;
+      if (hour == 18 && minute < 30) return false; // ⬅️ nuevo
+      if (hour == 5 && minute > 25) return false;
     }
+
     return true;
   } catch (e) {
     return false;

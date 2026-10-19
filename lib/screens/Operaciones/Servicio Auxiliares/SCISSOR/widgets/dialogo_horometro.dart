@@ -159,13 +159,13 @@ class _DialogoHorometroState extends State<DialogoHorometro> {
       return;
     }
 
-    // Construir el mapa de horómetros para guardar (Horómetro Principal y Diesel)
+    // Scissor tiene un único horómetro en la lista: diesel.
     Map<String, dynamic> horometrosToSave = {
       'diesel': {
-        'inicio': horometros[1]['inicial'] ?? 0,
-        'final': horometros[1]['final'] ?? 0,
-        'op': horometros[1]['EstaOP'] == 1,
-        'inop': horometros[1]['EstaINOP'] == 1,
+        'inicio': horometros[0]['inicial'] ?? 0,
+        'final': horometros[0]['final'] ?? 0,
+        'op': horometros[0]['EstaOP'] == 1,
+        'inop': horometros[0]['EstaINOP'] == 1,
       }
     };
 

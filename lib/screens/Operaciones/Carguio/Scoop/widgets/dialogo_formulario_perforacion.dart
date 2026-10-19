@@ -101,6 +101,56 @@ bool get _debeMostrarCucharas {
   return !codigosOmitir.contains(codigoStr);
 }
 
+// 🔥 Códigos donde labor + destino son OBLIGATORIOS
+bool get _ubicacionesSonObligatorias {
+  final codigosObligatorio = ['101', '102', '103']; // ajusta según necesites
+  return codigosObligatorio.contains(widget.codigo.toString());
+}
+
+// 🔥 Validación del botón Guardar
+bool get _puedeGuardar {
+  // Si no son obligatorias, siempre se puede guardar
+  if (!_ubicacionesSonObligatorias) return true;
+
+  // Verificar INICIO
+  final inicioTexto = ubicacionInicioController.text.trim();
+  final tieneInicio = (ubicacionInicioSeleccionado != null &&
+          ubicacionInicioSeleccionado!.trim().isNotEmpty) ||
+      inicioTexto.isNotEmpty;
+
+  // Verificar DESTINO
+  final destinoTexto = ubicacionDestinoController.text.trim();
+  final tieneDestino = (ubicacionDestinoSeleccionado != null &&
+          ubicacionDestinoSeleccionado!.trim().isNotEmpty) ||
+      destinoTexto.isNotEmpty;
+
+  return tieneInicio && tieneDestino;
+}
+
+// 🔥 Tooltip dinámico que indica QUÉ falta
+String get _mensajeTooltipGuardar {
+  if (_puedeGuardar) return 'Guardar datos';
+
+  final inicioTexto = ubicacionInicioController.text.trim();
+  final tieneInicio = (ubicacionInicioSeleccionado != null &&
+          ubicacionInicioSeleccionado!.trim().isNotEmpty) ||
+      inicioTexto.isNotEmpty;
+
+  final destinoTexto = ubicacionDestinoController.text.trim();
+  final tieneDestino = (ubicacionDestinoSeleccionado != null &&
+          ubicacionDestinoSeleccionado!.trim().isNotEmpty) ||
+      destinoTexto.isNotEmpty;
+
+  if (!tieneInicio && !tieneDestino) {
+    return 'Ingrese la ubicación de INICIO y DESTINO';
+  } else if (!tieneInicio) {
+    return 'Ingrese la ubicación de INICIO';
+  } else if (!tieneDestino) {
+    return 'Ingrese la ubicación de DESTINO';
+  }
+  return 'Guardar datos';
+}
+
 Future<void> _cargarMateriales() async {
   try {
     final dbHelper = DatabaseHelper();
@@ -321,14 +371,30 @@ if (ubicacionInicioSeleccionado != null) {
   }
 
 Future<void> _guardarDatos() async {
-  // 🔥 Obtener la ubicación inicio (seleccionada o texto libre)
   String ubicacionInicioFinal = ubicacionInicioSeleccionado ?? '';
-  
-  // Si no hay selección pero hay texto en el campo, usar ese texto
-  if (ubicacionInicioFinal.isEmpty && ubicacionInicioController.text.trim().isNotEmpty) {
+  if (ubicacionInicioFinal.isEmpty &&
+      ubicacionInicioController.text.trim().isNotEmpty) {
     ubicacionInicioFinal = ubicacionInicioController.text.trim();
   }
-  
+
+  String ubicacionDestinoFinal = ubicacionDestinoSeleccionado ?? '';
+  if (ubicacionDestinoFinal.isEmpty &&
+      ubicacionDestinoController.text.trim().isNotEmpty) {
+    ubicacionDestinoFinal = ubicacionDestinoController.text.trim();
+  }
+
+  // 🔥 Validar solo si son obligatorias para este código
+  if (_ubicacionesSonObligatorias) {
+    if (ubicacionInicioFinal.isEmpty) {
+      _mostrarSnackbar('Debe ingresar la ubicación INICIO', Colors.orange);
+      return;
+    }
+    if (ubicacionDestinoFinal.isEmpty) {
+      _mostrarSnackbar('Debe ingresar la ubicación DESTINO', Colors.orange);
+      return;
+    }
+  }
+
   int? destinoId;
   if (ubicacionDestinoSeleccionado != null) {
     final destinoEncontrado = destinosDisponibles.firstWhere(
@@ -337,19 +403,13 @@ Future<void> _guardarDatos() async {
     );
     destinoId = destinoEncontrado['id'];
   }
-  
-  // 🔥 También para destino, si es necesario (si quieres permitir texto libre en destino)
-  String ubicacionDestinoFinal = ubicacionDestinoSeleccionado ?? '';
-  if (ubicacionDestinoFinal.isEmpty && ubicacionDestinoController.text.trim().isNotEmpty) {
-    ubicacionDestinoFinal = ubicacionDestinoController.text.trim();
-  }
-  
+
   Map<String, dynamic> datosFormulario = {
-    'labor_inicio': ubicacionInicioFinal,  // 🔥 Usar la variable final
+    'labor_inicio': ubicacionInicioFinal,
     'ubicacion_destino_id': destinoId ?? 0,
-    'ubicacion_destino': ubicacionDestinoFinal,  // 🔥 Usar la variable final
+    'ubicacion_destino': ubicacionDestinoFinal,
     'n_cucharas': int.tryParse(nCucharasController.text) ?? 0,
-    'material': materialSeleccionado ?? '', 
+    'material': materialSeleccionado ?? '',
     'observaciones': observacionesController.text,
     'mineral': mineralController.text.trim().isEmpty ? '' : mineralController.text.trim(),
     'desmonte': desmonteController.text.trim().isEmpty ? '' : desmonteController.text.trim(),
@@ -1266,29 +1326,37 @@ Widget _buildDropdownMaterial() {
           ),
           const SizedBox(width: 8),
           if (isEditable)
-            ElevatedButton(
-              onPressed: _guardarDatos,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: widget.primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                minimumSize: Size.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.save, size: isSmallScreen ? 12 : 14),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Guardar',
-                    style: TextStyle(fontSize: isSmallScreen ? 12 : 13, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
+  Tooltip(
+    message: _mensajeTooltipGuardar,
+    child: ElevatedButton(
+      onPressed: _puedeGuardar ? _guardarDatos : null,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: widget.primaryColor,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.grey.shade300,
+        disabledForegroundColor: Colors.grey.shade600,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        minimumSize: Size.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.save, size: isSmallScreen ? 12 : 14),
+          const SizedBox(width: 6),
+          Text(
+            'Guardar',
+            style: TextStyle(
+              fontSize: isSmallScreen ? 12 : 13,
+              fontWeight: FontWeight.w600,
             ),
+          ),
+        ],
+      ),
+    ),
+  ),
         ],
       ),
     );

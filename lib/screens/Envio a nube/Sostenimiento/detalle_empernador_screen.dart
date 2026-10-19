@@ -7,7 +7,7 @@ import 'package:i_miner/screens/widgets/envio%20nube/empty_state.dart';
 import 'package:i_miner/screens/widgets/envio%20nube/exito_dialog.dart';
 import 'package:i_miner/screens/widgets/envio%20nube/loading_state.dart';
 import 'package:i_miner/services/envio%20nube/Sostenimiento/exportar_service.dart';
-import 'package:i_miner/services/envio%20nube/operaciones_service.dart';
+import 'package:i_miner/screens/Envio%20a%20nube/manual_operation_sync.dart';
 
 import '../../widgets/envio nube/operacion_card.dart';
 
@@ -22,10 +22,12 @@ class DetalleSeccionScreenEmpernador extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<DetalleSeccionScreenEmpernador> createState() => _DetalleSeccionEmpernadorScreenState();
+  State<DetalleSeccionScreenEmpernador> createState() =>
+      _DetalleSeccionEmpernadorScreenState();
 }
 
-class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmpernador> {
+class _DetalleSeccionEmpernadorScreenState
+    extends State<DetalleSeccionScreenEmpernador> {
   List<Map<String, dynamic>> operacionData = [];
   Set<int> selectedItems = {};
   bool isLoading = true;
@@ -47,14 +49,16 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
       List<Map<String, dynamic>> data = await _dbHelper
           .getOperacionesTaladroEmpernador();
 
+      if (!mounted) return;
       setState(() {
         operacionData = data;
         isLoading = false;
-        mensajeUsuario = data.isEmpty 
+        mensajeUsuario = data.isEmpty
             ? "No se encontraron registros para ${widget.tipoOperacion}"
             : "Datos cargados correctamente";
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         mensajeUsuario = "Error al cargar datos";
         isLoading = false;
@@ -64,32 +68,33 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
   }
 
   void _handleItemTap(int id) {
-  final item = operacionData.firstWhere((e) => e['id'] == id);
+    final item = operacionData.firstWhere((e) => e['id'] == id);
 
-  // 🚫 BLOQUEO SI YA FUE ENVIADO
-  if (item['envio'] == 1) {
-    _mostrarAdvertencia(
-      'Registro ya enviado',
-      'Este registro ya fue enviado y no se puede seleccionar nuevamente.',
-    );
-    return;
-  }
-
-  setState(() {
-    if (selectedItems.contains(id)) {
-      selectedItems.remove(id);
-    } else {
-      selectedItems.add(id);
+    // 🚫 BLOQUEO SI YA FUE ENVIADO
+    if (item['envio'] == 1) {
+      _mostrarAdvertencia(
+        'Registro ya enviado',
+        'Este registro ya fue enviado y no se puede seleccionar nuevamente.',
+      );
+      return;
     }
-  });
-}
+
+    setState(() {
+      if (selectedItems.contains(id)) {
+        selectedItems.remove(id);
+      } else {
+        selectedItems.add(id);
+      }
+    });
+  }
 
   void _confirmarEliminacion() {
     showDialog(
       context: context,
       builder: (context) => ConfirmacionDialog(
         titulo: 'Eliminar registros',
-        mensaje: '¿Estás seguro de eliminar ${selectedItems.length} registro(s)?\nEsta acción no se puede deshacer.',
+        mensaje:
+            '¿Estás seguro de eliminar ${selectedItems.length} registro(s)?\nEsta acción no se puede deshacer.',
         textoConfirmar: 'Eliminar',
         confirmColor: Colors.red,
         onConfirmar: _eliminarRegistrosSeleccionados,
@@ -103,7 +108,8 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const CargaDialog(mensaje: 'Eliminando registros...'),
+      builder: (context) =>
+          const CargaDialog(mensaje: 'Eliminando registros...'),
     );
 
     try {
@@ -153,11 +159,12 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
 
       bool? confirmado = await showDialog<bool>(
         context: context,
-        builder: (context) => _buildJsonPreviewDialog(jsonString, jsonDataList.length),
+        builder: (context) =>
+            _buildJsonPreviewDialog(jsonString, jsonDataList.length),
       );
 
       if (confirmado == true) {
-         await _enviarDatosALaNube(jsonDataList);
+        await _enviarDatosALaNube(jsonDataList);
       }
     } catch (e) {
       Navigator.pop(context); // Cierra loading
@@ -210,45 +217,45 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
               ),
             ),
             Expanded(
-  child: Padding(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      children: [
-        Text(
-          'Se enviarán $cantidad operaciones a la nube',
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 16),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Text(
+                      'Se enviarán $cantidad operaciones a la nube',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
 
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  jsonString,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                  ),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              jsonString,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ),
-      ],
-    ),
-  ),
-),
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -272,7 +279,10 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.primaryColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                     ),
                     child: const Text('Enviar a la nube'),
                   ),
@@ -285,58 +295,18 @@ class _DetalleSeccionEmpernadorScreenState extends State<DetalleSeccionScreenEmp
     );
   }
 
-Future<void> _enviarDatosALaNube(List<Map<String, dynamic>> jsonData) async {
-  final operacionService = OperacionesService();
-
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => const CargaDialog(mensaje: 'Enviando a la nube...'),
-  );
-
-  try {
-    /// 🔥 QUITAR local_id antes de enviar
-    final dataParaEnviar = jsonData.map((item) {
-      final copia = Map<String, dynamic>.from(item);
-      copia.remove('local_id');
-      return copia;
-    }).toList();
-
-    /// 🔥 IMPORTANTE: tipo correcto en backend
-    final success = await operacionService.crear(
-      'empernador', // 👈 ESTE ES CLAVE (debe coincidir con tu backend)
-      dataParaEnviar,
+  Future<void> _enviarDatosALaNube(List<Map<String, dynamic>> jsonData) async {
+    await sendManualOperations(
+      context,
+      type: 'empernador',
+      preview: jsonData,
+      refresh: () async {
+        if (!mounted) return;
+        await _fetchOperacionData();
+        if (mounted) setState(() => selectedItems.clear());
+      },
     );
-
-    Navigator.pop(context);
-
-    if (success) {
-      /// 🔥 MARCAR COMO ENVIADOS
-      for (var item in jsonData) {
-        int localId = item['local_id'];
-        await _dbHelper.actualizarEnvioEmpernador(localId, 1);
-      }
-
-      await _fetchOperacionData();
-      setState(() => selectedItems.clear());
-
-      showDialog(
-        context: context,
-        builder: (context) => ExitoDialog(
-          titulo: '¡Envío exitoso!',
-          mensaje: 'Se enviaron ${jsonData.length} operaciones correctamente',
-        ),
-      );
-
-    } else {
-      _mostrarError('Error al enviar datos al servidor');
-    }
-
-  } catch (e) {
-    Navigator.pop(context);
-    _mostrarError('Error en envío: ${e.toString()}');
   }
-}
 
   void _mostrarError(String mensaje) {
     showDialog(
@@ -387,12 +357,12 @@ Future<void> _enviarDatosALaNube(List<Map<String, dynamic>> jsonData) async {
             child: isLoading
                 ? const LoadingState()
                 : operacionData.isEmpty
-                    ? EmptyState(
-                        mensaje: mensajeUsuario,
-                        subtitulo: 'No hay registros disponibles',
-                        icono: Icons.inbox,
-                      )
-                    : _buildOperacionesList(),
+                ? EmptyState(
+                    mensaje: mensajeUsuario,
+                    subtitulo: 'No hay registros disponibles',
+                    icono: Icons.inbox,
+                  )
+                : _buildOperacionesList(),
           ),
         ],
       ),

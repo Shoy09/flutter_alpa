@@ -52,11 +52,11 @@ class BotonesAccionesInferiores extends StatelessWidget {
                 //   label: 'Condiciones de equipo',
                 //   onPressed: onCondicionesEquipoPressed,
                 // ),
-                // _buildAccionBoton(
-                //   icon: Icons.checklist,
-                //   label: 'CheckList',
-                //   onPressed: onChecklistPressed,
-                // ),
+                _buildAccionBoton(
+                  icon: Icons.checklist,
+                  label: 'CheckList',
+                  onPressed: onChecklistPressed,
+                ),
                 // _buildAccionBoton(
                 //   icon: Icons.tire_repair,
                 //   label: 'Presión de llantas',
@@ -77,12 +77,12 @@ class BotonesAccionesInferiores extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // _buildAccionBoton(
-                  //   icon: Icons.checklist,
-                  //   label: 'CheckList',
-                  //   onPressed: onChecklistPressed,
-                  // ),
-                  //const SizedBox(width: 8),
+                  _buildAccionBoton(
+                    icon: Icons.checklist,
+                    label: 'CheckList',
+                    onPressed: onChecklistPressed,
+                  ),
+                  const SizedBox(width: 8),
                   _buildAccionBoton(
                     icon: Icons.speed,
                     label: 'Horómetro',

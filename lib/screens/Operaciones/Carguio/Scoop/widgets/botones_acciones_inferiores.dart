@@ -61,11 +61,11 @@ class BotonesAccionesInferiores extends StatelessWidget {
                 //   label: 'Programa de trabajo',
                 //   onPressed: onCheckprogramaTrabajoPressed,
                 // ),
-                // _buildAccionBoton(
-                //   icon: Icons.checklist,
-                //   label: 'CheckList',
-                //   onPressed: onChecklistPressed,
-                // ),
+                _buildAccionBoton(
+                  icon: Icons.checklist,
+                  label: 'CheckList',
+                  onPressed: onChecklistPressed,
+                ),
                 // // _buildAccionBoton(
                 // //   icon: Icons.checklist,
                 // //   label: 'CheckList Telemando',
@@ -106,11 +106,11 @@ class BotonesAccionesInferiores extends StatelessWidget {
                 //   label: 'Programa',
                 //   onPressed: onCheckprogramaTrabajoPressed,
                 // ),
-                // _buildAccionBoton(
-                //   icon: Icons.checklist,
-                //   label: 'CheckList',
-                //   onPressed: onChecklistPressed,
-                // ),
+                _buildAccionBoton(
+                  icon: Icons.checklist,
+                  label: 'CheckList',
+                  onPressed: onChecklistPressed,
+                ),
                 // // _buildAccionBoton(
                 // //   icon: Icons.checklist,
                 // //   label: 'Telemando',
@@ -136,14 +136,14 @@ class BotonesAccionesInferiores extends StatelessWidget {
                 // Primera fila: 2 botones
                 Row(
                   children: [
-                    // Expanded(
-                    //   child: _buildAccionBoton(
-                    //     icon: Icons.checklist,
-                    //     label: 'CheckList',
-                    //     onPressed: onChecklistPressed,
-                    //   ),
-                    // ),
-                    //const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildAccionBoton(
+                        icon: Icons.checklist,
+                        label: 'CheckList',
+                        onPressed: onChecklistPressed,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: _buildAccionBoton(
                         icon: Icons.speed,
