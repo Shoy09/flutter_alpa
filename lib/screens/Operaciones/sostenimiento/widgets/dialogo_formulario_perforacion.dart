@@ -871,9 +871,15 @@ class _DialogoFormularioEmpernadorState
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: perforacionesFilas.length,
+            findChildIndexCallback: (key) {
+              if (key is! ObjectKey) return null;
+              final index = perforacionesFilas.indexOf(key.value as PerforacionFila);
+              return index == -1 ? null : index;
+            },
             itemBuilder: (context, index) {
               final p = perforacionesFilas[index];
               return Container(
+                key: ObjectKey(p),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -1086,6 +1092,11 @@ class _DialogoFormularioEmpernadorState
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: pernosFilas.length,
+            findChildIndexCallback: (key) {
+              if (key is! ObjectKey) return null;
+              final index = pernosFilas.indexOf(key.value as PernoFila);
+              return index == -1 ? null : index;
+            },
             itemBuilder: (context, index) {
               final p = pernosFilas[index];
               final longitudes = _longitudesParaTipo(p.tipoPerno);
@@ -1095,6 +1106,7 @@ class _DialogoFormularioEmpernadorState
                       : null;
 
               return Container(
+                key: ObjectKey(p),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -1231,9 +1243,15 @@ class _DialogoFormularioEmpernadorState
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: mallasFilas.length,
+            findChildIndexCallback: (key) {
+              if (key is! ObjectKey) return null;
+              final index = mallasFilas.indexOf(key.value as MallaFila);
+              return index == -1 ? null : index;
+            },
             itemBuilder: (context, index) {
               final m = mallasFilas[index];
               return Container(
+                key: ObjectKey(m),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(

@@ -222,16 +222,16 @@ class TablaOperacionesVolquetes extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _buildAccionButton(
-                  icon: Icons.visibility_outlined,
-                  color: Colors.blue,
-                  onPressed: () => onVerDetalle(operacion),
+                  icon: Icons.edit_outlined,
+                  color: Colors.orange,
+                  onPressed: () => onEditar(operacion),
                   size: isMobile ? 14 : 16,
                 ),
                 SizedBox(width: isMobile ? 4 : 8),
                 _buildAccionButton(
-                  icon: Icons.edit_outlined,
-                  color: Colors.orange,
-                  onPressed: () => onEditar(operacion),
+                  icon: Icons.visibility_outlined,
+                  color: Colors.blue,
+                  onPressed: () => onVerDetalle(operacion),
                   size: isMobile ? 14 : 16,
                 ),
                 SizedBox(width: isMobile ? 4 : 8),

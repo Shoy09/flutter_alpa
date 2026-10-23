@@ -1715,6 +1715,65 @@ Future<Map<String, dynamic>?> createEstado(
 }
 
 // Función para actualizar un estado completo
+/// Edita el inicio sin cambiar el orden ni los datos internos de los estados.
+Future<bool> updateEstadoCorrelativo(
+  int operacionId,
+  int estadoId, {
+  required String codigo,
+  required String horaInicio,
+  required String turno,
+  String tabla = 'Operacion_tal_largo',
+}) async {
+  const tablas = {
+    'Operacion_tal_largo', 'Operacion_tal_horizontal', 'Operacion_empernador',
+    'Operacion_Scalamin', 'Operacion_scissor', 'Operacion_carguio',
+  };
+  if (!tablas.contains(tabla)) throw ArgumentError.value(tabla, 'tabla');
+  final db = await database;
+  return db.transaction((txn) async {
+    final rows = await txn.query(tabla,
+        columns: ['registros'], where: 'id = ?', whereArgs: [operacionId]);
+    if (rows.isEmpty) return false;
+    final registros = (jsonDecode(rows.first['registros'] as String? ?? '[]') as List)
+        .map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final ordenados = List<Map<String, dynamic>>.from(registros)
+      ..sort((a, b) => (a['numero'] as int).compareTo(b['numero'] as int));
+    final index = ordenados.indexWhere((e) => e['id'] == estadoId);
+    if (index == -1) return false;
+
+    int minutos(String hora) {
+      final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(hora);
+      if (match == null) throw FormatException('Hora no valida: $hora');
+      final horaNumero = int.parse(match[1]!);
+      var valor = horaNumero * 60 + int.parse(match[2]!);
+      if (turno.toUpperCase() != 'DÍA' && horaNumero < 12) valor += 1440;
+      return valor;
+    }
+
+    final inicio = minutos(horaInicio);
+    if (index > 0 && inicio <= minutos(ordenados[index - 1]['hora_inicio'])) {
+      throw StateError('La hora debe ser posterior al inicio del estado anterior.');
+    }
+    if (index < ordenados.length - 1 &&
+        inicio >= minutos(ordenados[index + 1]['hora_inicio'])) {
+      throw StateError('La hora debe ser anterior al inicio del estado siguiente.');
+    }
+    final actual = ordenados[index];
+    final fin = actual['hora_final']?.toString() ?? '';
+    if (index == ordenados.length - 1 && fin.isNotEmpty && inicio >= minutos(fin)) {
+      throw StateError('La hora de inicio debe ser anterior a su hora final.');
+    }
+    actual['codigo'] = codigo;
+    actual['hora_inicio'] = horaInicio;
+    if (index > 0) ordenados[index - 1]['hora_final'] = horaInicio;
+    if (index < ordenados.length - 1) {
+      actual['hora_final'] = ordenados[index + 1]['hora_inicio'];
+    }
+    return await txn.update(tabla, {'registros': jsonEncode(registros)},
+        where: 'id = ?', whereArgs: [operacionId]) > 0;
+  });
+}
+
 Future<bool> updateEstado(
   int operacionId,
   int estadoId, {

@@ -111,6 +111,8 @@ List<String> _generateTimeIntervals(String turno) {
 // Convierte de formato 24h a 12h con AM/PM
 String _formatTo12Hour(String time24) {
   try {
+    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(time24);
+    if (match != null) time24 = '${match[1]}:${match[2]}';
     final parts = time24.split(':');
     int hour = int.parse(parts[0]);
     int minute = int.parse(parts[1]);
@@ -169,6 +171,9 @@ List<String> _getValidTimeRangeForEdit() {
     maxTime = widget.codigoOperativos[currentIndex + 1]["hora_inicio"];
     // Convertir de 24h a 12h para comparar
     if (maxTime != null) maxTime = _formatTo12Hour(maxTime);
+  } else {
+    final fin = widget.existingRecord!['hora_final'];
+    if (fin != null && fin.isNotEmpty) maxTime = _formatTo12Hour(fin);
   }
   
   // Generar todas las opciones de tiempo (ya en 12h)
@@ -239,8 +244,8 @@ bool _isValidTimeForShift(String time12h, String shift) {
         .where((item) => !isEditing || item["id"] != widget.existingRecord!["id"])
         .any((item) {
           String horaItem = item["hora_inicio"] ?? '';
-          if (horaItem.contains(' ')) horaItem = horaItem.split(' ')[1];
-          return horaItem == selectedTime;
+          return horaItem.isNotEmpty &&
+              _compareTimes(_formatTo12Hour(horaItem), selectedTime!) == 0;
         });
     
     if (horaExiste) {

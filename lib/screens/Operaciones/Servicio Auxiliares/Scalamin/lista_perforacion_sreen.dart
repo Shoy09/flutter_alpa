@@ -230,8 +230,8 @@ Future<void> _cargarEstadosOperacion() async {
     ),
     child: TablaOperaciones(
       operaciones: operacionesTabla,
-      onVerDetalle: _verDetalleOperacion,
-      onEditar: _editarOperacion,
+      onVerDetalle: _verRegistroEstado,
+      onEditar: _editarEstado,
       onEliminar: _eliminarRegistroEstado, // Nueva función
       primaryColor: primaryColor,
     ),
@@ -533,24 +533,25 @@ void _mostrarDialogoEstado(String estado) async {
   }
 }
 
-void _verDetalleOperacion(Map<String, dynamic> operacion) async {
+void _editarEstado(Map<String, dynamic> operacion) async {
   // Verificar que haya una operación seleccionada
   if (operacionActual == null) {
     return;
   }
 
-  // Obtener los códigos operativos para este estado
-  List<Map<String, String>> codigosOperativos = operaciones
-      .where((op) => op['estado'] == operacion['estado'])
-      .map((op) => {
-        'id': op['id'].toString(),
-        'numero': op['numero']?.toString() ?? '0',
-        'codigo': op['codigo']?.toString() ?? '',
-        'hora_inicio': op['hora_inicio']?.toString() ?? '',
-        'hora_final': op['hora_final']?.toString() ?? '',
-        'estado': op['estado']?.toString() ?? '',
-      })
-      .toList();
+  final estados = await DatabaseHelper()
+      .getEstadosByOperacionIdScalamin(operacionActual!['id']);
+  estados.sort((a, b) => (a['numero'] as int).compareTo(b['numero'] as int));
+  final actual = estados.firstWhere((e) => e['id'] == operacion['id']);
+  final codigosOperativos = estados.map((e) => <String, String>{
+    'id': e['id'].toString(),
+    'numero': e['numero'].toString(),
+    'codigo': e['codigo']?.toString() ?? '',
+    'hora_inicio': e['hora_inicio']?.toString() ?? '',
+    'hora_final': e['hora_final']?.toString() ?? '',
+    'estado': e['estado']?.toString() ?? '',
+  }).toList();
+  if (!mounted) return;
 
   // Mostrar el diálogo de edición
   final result = await showRegistroOperacionDialog(
@@ -560,11 +561,11 @@ void _verDetalleOperacion(Map<String, dynamic> operacion) async {
     selectedState: operacion['estado'] ?? 'OPERATIVO',
     datadialog: datadialog,
     existingRecord: {
-      'id': operacion['id'].toString(),
-      'numero': operacion['numero']?.toString() ?? '0',
-      'codigo': operacion['codigo']?.toString() ?? '',
-      'hora_inicio': operacion['hora_inicio']?.toString() ?? '',
-      'hora_final': operacion['hora_final']?.toString() ?? '',
+      'id': actual['id'].toString(),
+      'numero': actual['numero']?.toString() ?? '0',
+      'codigo': actual['codigo']?.toString() ?? '',
+      'hora_inicio': actual['hora_inicio']?.toString() ?? '',
+      'hora_final': actual['hora_final']?.toString() ?? '',
     },
   );
 
@@ -668,7 +669,7 @@ Future<void> _crearRegistroEstado(Map<String, dynamic> data, String estado) asyn
       await _fetchOperacionData();
       
       // Mostrar diálogo secundario según el estado
-      _mostrarDialogoSecundario(nuevoEstado['id'], estado);
+      _mostrarDialogoSecundario(nuevoEstado['id'], estado, data['codigo']!);
     }
   } catch (e) {
     _mostrarSnackBar("Error al crear registro: $e", Colors.red);
@@ -680,95 +681,21 @@ Future<void> _actualizarRegistroEstado(Map<String, dynamic> data, Map<String, dy
   try {
     if (operacionActual == null) return;
 
-    // Función auxiliar para convertir hora a DateTime completo
-    DateTime? parseHoraCompleta(String horaStr) {
-      try {
-        if (horaStr.contains(' ')) {
-          return DateTime.parse(horaStr);
-        } else {
-          String fechaHora = '${fechaActual} ${horaStr}';
-          return DateTime.parse(fechaHora);
-        }
-      } catch (e) {
-        print('Error parseando hora: $horaStr');
-        return null;
-      }
-    }
-
-    // Obtener TODOS los registros
-    List<Map<String, dynamic>> todosLosEstados = await DatabaseHelper()
-        .getEstadosByOperacionIdScalamin(operacionActual!['id']);
-
-    // Ordenar por hora de inicio
-    todosLosEstados.sort((a, b) {
-      DateTime? horaA = parseHoraCompleta(a['hora_inicio']);
-      DateTime? horaB = parseHoraCompleta(b['hora_inicio']);
-      
-      if (horaA == null) return 1;
-      if (horaB == null) return -1;
-      
-      return horaA.compareTo(horaB);
-    });
-
-    // Actualizar el registro principal
-    bool actualizado = await DatabaseHelper().updateEstadoScalamin(
+    final actualizado = await DatabaseHelper().updateEstadoCorrelativo(
       operacionActual!['id'],
-      data['id'],
-      numero: data['numero'],
-      estado: data['estado'],
-      codigo: data['codigo'],
-      horaInicio: data['hora_inicio'],
-      horaFinal: data['hora_final'] ?? '',
-      operacion: {
-        'nivel': data['nivel'] ?? '',
-        'labor': data['labor'] ?? '',
-      },
+      operacionOriginal['id'] as int,
+      tabla: 'Operacion_Scalamin',
+      codigo: data['codigo'] as String,
+      horaInicio: data['hora_inicio'] as String,
+      turno: operacionActual!['turno'] ?? selectedTurno ?? 'DÍA',
     );
-
-    if (actualizado) {
-      // Re-obtener todos los estados después de la actualización
-      todosLosEstados = await DatabaseHelper()
-          .getEstadosByOperacionIdScalamin(operacionActual!['id']);
-      
-      // Ordenar nuevamente por hora de inicio
-      todosLosEstados.sort((a, b) {
-        DateTime? horaA = parseHoraCompleta(a['hora_inicio']);
-        DateTime? horaB = parseHoraCompleta(b['hora_inicio']);
-        
-        if (horaA == null) return 1;
-        if (horaB == null) return -1;
-        
-        return horaA.compareTo(horaB);
-      });
-      
-      // Reconstruir la secuencia de horas
-      for (int i = 0; i < todosLosEstados.length; i++) {
-        var estadoActual = todosLosEstados[i];
-        
-        if (i < todosLosEstados.length - 1) {
-          var siguienteEstado = todosLosEstados[i + 1];
-          
-          if (estadoActual['hora_final'] != siguienteEstado['hora_inicio']) {
-            await DatabaseHelper().updateHoraFinalScalamin(
-              operacionActual!['id'],
-              estadoActual['id'],
-              siguienteEstado['hora_inicio'],
-            );
-          }
-        } else {
-          if (estadoActual['hora_final'] != "") {
-            await DatabaseHelper().updateHoraFinalScalamin(
-              operacionActual!['id'],
-              estadoActual['id'],
-              "",
-            );
-          }
-        }
-      }
-      
-      _mostrarSnackBar("Registro actualizado correctamente.", Colors.green);
-      await _fetchOperacionData();
+    if (!mounted) return;
+    if (!actualizado) {
+      _mostrarSnackBar('No se encontró el estado para actualizar.', Colors.red);
+      return;
     }
+    _mostrarSnackBar('Registro actualizado correctamente.', Colors.green);
+    await _fetchOperacionData();
   } catch (e) {
     _mostrarSnackBar("Error al actualizar: $e", Colors.red);
   }
@@ -781,13 +708,13 @@ Future<List<Map<String, dynamic>>> _getOperaciones() async {
 }
 
 
-void _mostrarDialogoSecundario(int estadoId, String estado) async {
+void _mostrarDialogoSecundario(int estadoId, String estado, String codigo) async {
   if (operacionActual == null) return;
 
   Future.delayed(Duration.zero, () {
     if (estado == "OPERATIVO") {
       // 📌 CASO 1: ES OPERATIVO → Formulario de Rompebanco
-      _abrirDialogoRompebanco(estadoId);
+      _abrirDialogoRompebanco(estadoId, codigo);
     } else {
       // 📌 CASO 2: NO ES OPERATIVO → Mi nuevo diálogo específico
       _abrirDialogoNoOperativo(estadoId, estado);
@@ -796,7 +723,7 @@ void _mostrarDialogoSecundario(int estadoId, String estado) async {
 }
 
 // Método para OPERATIVO
-Future<void> _abrirDialogoRompebanco(int estadoId) async {
+Future<void> _abrirDialogoRompebanco(int estadoId, String codigo) async {
   Map<String, dynamic> datosRompebanco = await DatabaseHelper()
       .getOperacionByEstadoIdScalamin(operacionActual!['id'], estadoId);
 
@@ -810,6 +737,7 @@ Future<void> _abrirDialogoRompebanco(int estadoId) async {
         datosIniciales: datosRompebanco,
         estado: "OPERATIVO",
         primaryColor: primaryColor,
+        codigo: codigo,
         onGuardar: (datosActualizados) async {
           bool guardado = await DatabaseHelper().updateOperacionByEstadoIdScalamin(
             operacionActual!['id'],
@@ -912,7 +840,7 @@ Future<void> _handleNuevaOperacion(Map<String, dynamic> data) async {
   await _fetchOperacionData();
 }
 
-void _editarOperacion(Map<String, dynamic> operacion) async {
+void _verRegistroEstado(Map<String, dynamic> operacion) async {
   if (operacionActual == null) return;
 
   String estado = operacion['estado'] ?? 'OPERATIVO';
@@ -959,6 +887,7 @@ Future<void> _editarOperacionOperativo(Map<String, dynamic> operacion) async {
         datosIniciales: datosRompebanco,
         estado: "OPERATIVO",
         primaryColor: primaryColor,
+        codigo: operacion['codigo'] ?? '',  
         onGuardar: (datosActualizados) async {
           bool guardado = await DatabaseHelper().updateOperacionByEstadoIdScalamin(
             operacionActual!['id'],

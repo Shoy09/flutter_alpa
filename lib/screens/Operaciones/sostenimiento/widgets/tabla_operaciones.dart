@@ -221,17 +221,17 @@ class TablaOperaciones extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _buildAccionButton(
-                  icon: Icons.visibility_outlined,
-                  color: Colors.blue,
-                  tooltip: 'Ver detalle',
-                  onPressed: () => onVerDetalle(operacion),
-                ),
-                const SizedBox(width: 8),
-                _buildAccionButton(
                   icon: Icons.edit_outlined,
                   color: Colors.orange,
                   tooltip: 'Editar',
                   onPressed: () => onEditar(operacion),
+                ),
+                const SizedBox(width: 8),
+                _buildAccionButton(
+                  icon: Icons.visibility_outlined,
+                  color: Colors.blue,
+                  tooltip: 'Ver detalle',
+                  onPressed: () => onVerDetalle(operacion),
                 ),
                 const SizedBox(width: 8),
                 _buildAccionButton(

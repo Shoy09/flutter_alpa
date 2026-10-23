@@ -746,9 +746,15 @@ Future<void> _guardarDatos() async {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: barrasFilas.length,
+            findChildIndexCallback: (key) {
+              if (key is! ObjectKey) return null;
+              final index = barrasFilas.indexOf(key.value as BarraFila);
+              return index == -1 ? null : index;
+            },
             itemBuilder: (context, index) {
               final barra = barrasFilas[index];
               return Container(
+                key: ObjectKey(barra),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(

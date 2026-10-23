@@ -12,7 +12,7 @@ class DialogoFormularioScalamin extends StatefulWidget {
   final String estado;
   final Color primaryColor;
   final Function(Map<String, dynamic>) onGuardar;
-
+final String codigo; 
   const DialogoFormularioScalamin({
     Key? key,
     required this.operacionId,
@@ -21,6 +21,7 @@ class DialogoFormularioScalamin extends StatefulWidget {
     required this.estado,
     this.primaryColor = const Color(0xFF1B5E6B),
     required this.onGuardar,
+    required this.codigo,
   }) : super(key: key);
 
   @override
@@ -62,6 +63,15 @@ class _DialogoFormularioScalaminState extends State<DialogoFormularioScalamin> {
   List<TipoLabor> tiposLaborCompletos = [];
   List<String> opcionesTipoLabor = [];
   String? tipoLaborSeleccionado;
+
+bool get _debeMostrarDatosPerforacion {
+  // Códigos que SÍ deben mostrar los datos de perforación
+  final codigosMostrar = ['101'];
+  
+  final codigoStr = widget.codigo.toString();
+  
+  return codigosMostrar.contains(codigoStr);
+}
 
   @override
   void initState() {
@@ -283,9 +293,11 @@ class _DialogoFormularioScalaminState extends State<DialogoFormularioScalamin> {
                         children: [
                           _buildSeccionUbicacion(),
                           const SizedBox(height: 16),
+                          if (_debeMostrarDatosPerforacion) ...[
                           // ✅ AHORA USAMOS _buildSeccionDatosAdicionales CON DROPDOWN
                           _buildSeccionDatosAdicionales(),
                           const SizedBox(height: 16),
+                           ],
                           _buildSeccionObservaciones(),
                         ],
                       ),
