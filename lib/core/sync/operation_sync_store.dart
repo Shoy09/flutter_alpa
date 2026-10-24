@@ -13,7 +13,7 @@ class SqliteOperationSyncStore implements OperationSyncStore {
     final rows = await database.query(
       table,
       where: ids == null
-          ? 'envio IN (0, 0.5)'
+          ? 'envio IN (0, 0.5, 2, 3)'
           : 'id IN (${List.filled(ids.length, '?').join(',')})',
       whereArgs: ids?.toList(),
     );
@@ -24,7 +24,10 @@ class SqliteOperationSyncStore implements OperationSyncStore {
   }
 
   @override
-  Future<void> claim(List<OperationPayload> rows) async {
+  Future<void> claim(
+    List<OperationPayload> rows, {
+    bool idempotentCreates = false,
+  }) async {
     await database.transaction((transaction) async {
       for (final row in rows) {
         final id = OperationSyncEngine.integer(row['local_id']);
@@ -32,7 +35,12 @@ class SqliteOperationSyncStore implements OperationSyncStore {
         if (snapshot == null) throw StateError('Falta el registro local $id.');
         final changed = await transaction.update(
           table,
-          {'envio': 2},
+          {
+            'envio': 2,
+            if (idempotentCreates &&
+                OperationSyncEngine.integer(row['idNube']) == 0)
+              'sync_retry_safe': 1,
+          },
           where: 'id = ? AND envio IS ? AND idNube IS ?',
           whereArgs: [id, snapshot['envio'], snapshot['idNube']],
         );
@@ -70,7 +78,12 @@ class SqliteOperationSyncStore implements OperationSyncStore {
       final changed =
           snapshot != null &&
           snapshot.keys
-              .where((key) => key != 'envio' && key != 'idNube')
+              .where(
+                (key) =>
+                    key != 'envio' &&
+                    key != 'idNube' &&
+                    key != 'sync_retry_safe',
+              )
               .any((key) => current[key] != snapshot[key]);
       await transaction.update(
         table,

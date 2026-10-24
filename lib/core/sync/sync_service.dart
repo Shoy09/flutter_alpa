@@ -57,10 +57,14 @@ class SyncService {
       if (user == null) return;
       await _gate.run(() async {
         if (user != await _dbHelper.getCurrentUserDni()) return;
+        final idempotentCreates = await _api.supportsIdempotentCreates();
         for (final type in _processes.keys) {
           if (user != await _dbHelper.getCurrentUserDni()) return;
           try {
-            final result = await _syncType(type);
+            final result = await _syncType(
+              type,
+              idempotentCreates: idempotentCreates,
+            );
             debugPrint('Sync $type: ${result.message}');
           } catch (error) {
             debugPrint('No se pudo sincronizar $type: $error');
@@ -79,11 +83,23 @@ class SyncService {
       if (user == null || user != await _dbHelper.getCurrentUserDni()) {
         throw StateError('La sesión cambió. Vuelve a abrir la lista.');
       }
-      return _syncType(type, ids: selected);
+      final idempotentCreates = await _api.supportsIdempotentCreates();
+      if (user != await _dbHelper.getCurrentUserDni()) {
+        throw StateError('La sesión cambió. Vuelve a abrir la lista.');
+      }
+      return _syncType(
+        type,
+        ids: selected,
+        idempotentCreates: idempotentCreates,
+      );
     });
   }
 
-  Future<OperationSyncResult> _syncType(String type, {Set<int>? ids}) async {
+  Future<OperationSyncResult> _syncType(
+    String type, {
+    Set<int>? ids,
+    bool idempotentCreates = false,
+  }) async {
     final process = _processes[type];
     if (process == null) {
       throw ArgumentError('Tipo de operación no soportado: $type');
@@ -93,6 +109,7 @@ class SyncService {
     return OperationSyncEngine(
       store: SqliteOperationSyncStore(database, process.$1),
       api: _api,
+      idempotentCreates: idempotentCreates,
       prepare: (selected, rows) async => List<Map<String, dynamic>>.from(
         await exporter.prepararDatosParaExportar(selected, rows),
       ),

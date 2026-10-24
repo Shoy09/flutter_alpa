@@ -61,6 +61,7 @@ class ExportarCarguioService {
 final horaActual = _getHoraActual();
       /// 🔥 OBJETO FINAL (PLANO como Sequelize)
       jsonDataList.add({
+        "sync_uuid": operacion['sync_uuid'],
         "local_id": id,
         "idNube": operacion['idNube'] ?? 0,
         "fecha": operacion['fecha'] ?? "",

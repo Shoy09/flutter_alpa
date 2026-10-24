@@ -1,3 +1,4 @@
+import 'operation_sync_identity.dart';
 import 'checklist_local_store.dart';
 import 'package:i_miner/models/checklist_item.dart';
 import 'dart:convert';
@@ -32,7 +33,7 @@ class DatabaseHelper {
   static Database? _sharedDatabase;
   static String? _currentUserDni;
   static bool _isInitialized = false;
-  static const int _userDbVersion = 2;
+  static const int _userDbVersion = 4;
   static const int _sharedDbVersion = 2;
 
   DatabaseHelper._internal() {
@@ -627,9 +628,13 @@ await db.execute('''
     )
   ''');
 
+    await OperationSyncIdentity.migrate(db);
   }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  if (oldVersion < 4) {
+    await OperationSyncIdentity.migrate(db);
+  }
   if (oldVersion < 2) {
     final existeTabla = await _tablaExiste(db, 'Operacion_scissor');
     if (existeTabla) {

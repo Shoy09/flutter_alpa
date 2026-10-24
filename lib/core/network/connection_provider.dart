@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:i_miner/core/sync/sync_service.dart';
 import 'connection_service.dart';
@@ -13,11 +14,13 @@ class ConnectionProvider extends ChangeNotifier {
   ConnectionStatus get status => _status;
 
   bool _isSyncing = false; // 🔥 bloqueo
+  Timer? _retryTimer;
+  StreamSubscription<ConnectionStatus>? _subscription;
 
   ConnectionProvider() {
     _service.initialize();
 
-    _service.connectionStream.listen((newStatus) async {
+    _subscription = _service.connectionStream.listen((newStatus) async {
       final previousStatus = _status;
 
       _status = newStatus;
@@ -25,32 +28,34 @@ class ConnectionProvider extends ChangeNotifier {
 
       if (previousStatus == ConnectionStatus.offline &&
           newStatus == ConnectionStatus.online) {
-
-        // 🔥 evitar múltiples sync simultáneos
-        if (_isSyncing) {
-          print("⚠️ Sync ya en progreso");
-          return;
-        }
-
-        _isSyncing = true;
-
-        try {
-          print("🟢 Internet recuperado → lanzar sync");
-
-          await SyncService().syncData();
-        } catch (e) {
-          print("❌ Error en sincronización: $e");
-        } finally {
-          _isSyncing = false;
-        }
+        await _syncPending();
       }
     });
+    // Reintentar también cuando la conexión sigue disponible, sin exigir
+    // desconectar y conectar la tablet. No es un servicio en segundo plano.
+    _retryTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      if (isOnline) unawaited(_syncPending());
+    });
+  }
+
+  Future<void> _syncPending() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      await SyncService().syncData();
+    } catch (error) {
+      debugPrint('Error en sincronización: $error');
+    } finally {
+      _isSyncing = false;
+    }
   }
 
   bool get isOnline => _status == ConnectionStatus.online;
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
+    _subscription?.cancel();
     _service.dispose();
     super.dispose();
   }

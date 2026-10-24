@@ -56,6 +56,7 @@ class ExportarVolquetesService {
 final horaActual = _getHoraActual();
       /// Objeto final
       jsonDataList.add({
+        "sync_uuid": operacion['sync_uuid'],
         "local_id": id,
         "idNube": operacion['idNube'] ?? 0,
         "fecha": operacion['fecha'] ?? "",

@@ -33,7 +33,8 @@ Future<void> sendManualOperations(
       throw StateError('La selección contiene un registro sin ID local.');
     }
     final result = await SyncService().syncSelected(type, ids);
-    title = result.errors.isNotEmpty || result.uncertain > 0
+    title =
+        result.errors.isNotEmpty || result.uncertain > 0 || result.retryable > 0
         ? 'Envío con pendientes'
         : 'Sincronización completada';
     message = result.message;

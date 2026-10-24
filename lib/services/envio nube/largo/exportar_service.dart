@@ -57,6 +57,7 @@ class ExportarService {
 final horaActual = _getHoraActual();
       /// 🔥 OBJETO FINAL (SOLO CAMPOS DEL MODELO)
       jsonDataList.add({
+        "sync_uuid": operacion['sync_uuid'],
         "local_id": id, 
         "idNube": operacion['idNube'] ?? 0,
         "fecha": operacion['fecha'] ?? "",

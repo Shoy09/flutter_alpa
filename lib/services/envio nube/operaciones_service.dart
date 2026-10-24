@@ -11,6 +11,22 @@ class OperacionesService implements OperationSyncApi {
   final http.Client _client;
 
   @override
+  Future<bool> supportsIdempotentCreates() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('${ApiConfig.baseUrl}/operaciones/sync-capabilities'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return false;
+      final body = jsonDecode(response.body);
+      return body is Map &&
+          body['ok'] == true &&
+          body['sync_uuid_version'] == 1;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
   Future<List<dynamic>> actualizarMasivoResultados(
     String tipo,
     List<dynamic> data,

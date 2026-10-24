@@ -52,6 +52,7 @@ class ExportarScalaminService {
 
       /// 🔥 OBJETO FINAL
       jsonDataList.add({
+        "sync_uuid": operacion['sync_uuid'],
         "local_id": id,
         "idNube": operacion['idNube'] ?? 0,
 

@@ -61,6 +61,7 @@ class ExportarHorizontalService {
 
       /// 🔥 OBJETO FINAL (PLANO + STRING)
       jsonDataList.add({
+        "sync_uuid": operacion['sync_uuid'],
         "local_id": id, // 🔥 IMPORTANTE
         "idNube": operacion['idNube'] ?? 0,
 
