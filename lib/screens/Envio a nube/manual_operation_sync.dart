@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:i_miner/core/sync/operation_sync_engine.dart';
 import 'package:i_miner/core/sync/sync_service.dart';
 import 'package:i_miner/screens/widgets/envio%20nube/carga_dialog.dart';
+import 'manual_sync_recovery.dart';
 
 final _sendingScreens = <BuildContext>{};
 
@@ -25,6 +27,7 @@ Future<void> sendManualOperations(
   navigator.push(loading);
   String title;
   String message;
+  OperationSyncResult? outcome;
   try {
     final ids = preview
         .map((row) => OperationSyncEngine.integer(row['local_id']))
@@ -33,8 +36,14 @@ Future<void> sendManualOperations(
       throw StateError('La selección contiene un registro sin ID local.');
     }
     final result = await SyncService().syncSelected(type, ids);
-    title =
-        result.errors.isNotEmpty || result.uncertain > 0 || result.retryable > 0
+    outcome = result;
+    title = result.apiUnverified
+        ? 'No se pudo verificar la API'
+        : result.uncertain > 0
+        ? 'Registros sin confirmación'
+        : result.retryable > 0
+        ? 'Pendientes de reintento'
+        : result.errors.isNotEmpty
         ? 'Envío con pendientes'
         : 'Sincronización completada';
     message = result.message;
@@ -48,12 +57,24 @@ Future<void> sendManualOperations(
   if (!context.mounted) return;
   await refresh();
   if (!context.mounted) return;
-  await showDialog<void>(
+  final recoverable =
+      outcome?.blocked.where((row) => row['can_recover'] == true).toList() ??
+      <OperationPayload>[];
+  final recover = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: SingleChildScrollView(child: Text(message)),
+      content: SingleChildScrollView(child: SelectableText(message)),
       actions: [
+        TextButton(
+          onPressed: () => Clipboard.setData(ClipboardData(text: message)),
+          child: const Text('Copiar detalle'),
+        ),
+        if (recoverable.isNotEmpty)
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Recuperar registro'),
+          ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cerrar'),
@@ -61,4 +82,12 @@ Future<void> sendManualOperations(
       ],
     ),
   );
+  if (recover == true && context.mounted) {
+    await recoverVerifiedMissingOperation(
+      context,
+      type: type,
+      rows: recoverable,
+      refresh: refresh,
+    );
+  }
 }

@@ -1,4 +1,5 @@
-import 'dart:convert';
+import 'package:i_miner/services/user_profile_data.dart';
+import 'package:i_miner/screens/transfer/local_transfer_screen.dart';
 import 'package:i_miner/screens/checklist/checklist_screen.dart';
 
 import 'package:flutter/material.dart';
@@ -58,14 +59,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final dbHelper = DatabaseHelper();
       final usuario = await dbHelper.getUserByDni(widget.dni);
+      if (!mounted) return;
       if (usuario != null) {
         setState(() {
           nombreUsuario = '${usuario['nombres']} ${usuario['apellidos']}';
           rol = usuario['rol'];
 
           final operacionesJson = usuario['operaciones_autorizadas'];
-          if (operacionesJson != null && operacionesJson.isNotEmpty) {
-            operacionesAutorizadas = jsonDecode(operacionesJson);
+          if (operacionesJson != null) {
+            operacionesAutorizadas = parseUserOperations(operacionesJson);
           }
         });
       } else {
@@ -76,6 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } catch (e) {
       print('Error obteniendo usuario: $e');
+      if (!mounted) return;
       setState(() {
         nombreUsuario = "Error al cargar usuario";
         rol = "Error al cargar rol";
@@ -102,6 +105,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: navbarColor,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(icon: const Icon(Icons.wifi_tethering), tooltip: 'Transferencias sin internet',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LocalTransferScreen(
+              source: widget.dni, canReceive: rol.trim().toLowerCase() == 'master')))),
           // IconButton(
           //   tooltip: 'Checklist de equipos (demo)',
           //   icon: const Icon(Icons.fact_check_outlined),

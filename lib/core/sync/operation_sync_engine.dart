@@ -8,13 +8,16 @@ class OperationSyncResult {
   int uncertain = 0;
   int retryable = 0;
   int recovered = 0;
+  bool apiUnverified = false;
   final errors = <String>[];
+  final blocked = <OperationPayload>[];
   String get message =>
       'Creados: $created · Actualizados: $updated'
       '${recovered > 0 ? " · Recuperados: $recovered" : ""}'
       '${retryable > 0 ? " · Pendientes de reintento: $retryable" : ""}'
       '${uncertain > 0 ? " · Sin confirmación: $uncertain (requieren revisión en nube)" : ""}'
-      '${errors.isNotEmpty ? "\n${errors.join('\n')}" : ""}';
+      '${errors.isNotEmpty ? "\n${errors.join('\n')}" : ""}'
+      '${errors.isNotEmpty || uncertain > 0 || retryable > 0 ? "\nDiagnóstico: SYNC-20261024-R2" : ""}';
 }
 
 /// Es el mismo bloqueo para las rutas automáticas y las pantallas manuales.
@@ -42,7 +45,8 @@ abstract class OperationSyncStore {
     bool idempotentCreates = false,
   });
   Future<void> mark(int id, double state);
-  Future<void> confirm(int id, int cloudId, double state);
+  Future<void> confirm(int id, int cloudId, double state, {String? cloudHash});
+  Future<List<String>> attemptedHashes(String uuid) async => [];
 }
 
 abstract class OperationSyncApi {
@@ -60,10 +64,12 @@ class OperationSyncEngine {
     required this.api,
     required this.prepare,
     this.idempotentCreates = false,
+    this.requireIdempotentCreates = true,
   });
   final OperationSyncStore store;
   final OperationSyncApi api;
   final bool idempotentCreates;
+  final bool requireIdempotentCreates;
   static final _uuid = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
   );
@@ -96,21 +102,52 @@ class OperationSyncEngine {
         (idempotentCreates &&
             hasIdentity(row) &&
             integer(row['sync_retry_safe']) == 1);
-    final pending = rows
+    final eligible = rows
         .where(
           (row) =>
               [0.0, 0.5].contains(state(row['envio'])) ||
               ([2.0, 3.0].contains(state(row['envio'])) && canRetry(row)),
         )
         .toList();
+    final pending = <OperationPayload>[];
+    for (final row in eligible) {
+      if (requireIdempotentCreates &&
+          !idempotentCreates &&
+          integer(row['idNube']) == 0) {
+        result.retryable++;
+        result.apiUnverified = true;
+      } else {
+        pending.add(row);
+      }
+    }
+    if (result.retryable > 0) {
+      result.errors.add(
+        'No se verificó la compatibilidad de la API. No se inició ninguna creación sin protección; vuelve a intentar con conexión.',
+      );
+    }
     result.uncertain = rows
         .where(
           (row) => [2.0, 3.0].contains(state(row['envio'])) && !canRetry(row),
         )
         .length;
-    if (result.uncertain > 0) {
+    for (final row in rows.where(
+      (row) => [2.0, 3.0].contains(state(row['envio'])) && !canRetry(row),
+    )) {
+      final protected =
+          hasIdentity(row) && integer(row['sync_retry_safe']) == 1;
+      if (protected && !idempotentCreates) result.apiUnverified = true;
+      result.blocked.add({
+        ...row,
+        'can_recover':
+            !protected &&
+            [2.0, 3.0].contains(state(row['envio'])) &&
+            hasIdentity(row) &&
+            integer(row['idNube']) == 0,
+      });
       result.errors.add(
-        'Hay envíos anteriores o sin protección confirmada. Revisar en nube antes de reenviar.',
+        protected
+            ? 'Registro local ${row['id']}: tiene clave protegida, pero no se pudo verificar la API en este intento. Reintenta con conexión.'
+            : 'Registro local ${row['id']}: el envío anterior quedó sin confirmar. Puede ser nuevo; comprueba si llegó a la nube antes de recuperarlo.',
       );
     }
     if (pending.isEmpty) return result;
@@ -140,6 +177,11 @@ class OperationSyncEngine {
         ..['sync_uuid'] = row['sync_uuid']
         ..['idNube'] = integer(row['idNube'])
         ..['envio'] = finalState(row);
+      if (row['sync_cloud_hash'] is String) {
+        item['base_cloud_hash'] = row['sync_cloud_hash'];
+      }
+      final attempts = await store.attemptedHashes('${row['sync_uuid']}');
+      if (attempts.isNotEmpty) item['attempted_hashes'] = attempts;
       item.remove('sync_retry_safe');
       // El ID remoto decide POST o PUT, independientemente del estado de envío.
       (integer(row['idNube']) > 0 ? updates : creates).add(item);
@@ -153,11 +195,11 @@ class OperationSyncEngine {
       List<dynamic>? response;
       try {
         response = await api.crearParciales(type, creates);
-      } catch (_) {
+      } catch (error) {
         result.errors.add(
           idempotentCreates
-              ? 'No se confirmó el envío; queda pendiente para reintentar con la misma clave.'
-              : 'No se confirmó la creación. Revisar en nube antes de reenviar.',
+              ? 'No se confirmó el envío; queda pendiente para reintentar con la misma clave. Detalle: $error'
+              : 'No se confirmó la creación. Revisar en nube antes de reenviar. Detalle: $error',
         );
       }
       final acknowledged = <int>{};
@@ -170,6 +212,24 @@ class OperationSyncEngine {
         final localId = integer(raw['local_id']);
         final cloudId = integer(raw['server_id']);
         final row = requested[localId];
+        if (row != null && raw['error'] != null) {
+          final detail = '${raw['error']}';
+          result.errors.add(
+            'Registro local $localId: ${detail.length > 300 ? detail.substring(0, 300) : detail}',
+          );
+        } else if (row != null && cloudId <= 0) {
+          result.errors.add(
+            'Registro local $localId: la API no devolvió un ID remoto válido.',
+          );
+        }
+        if (row != null &&
+            idempotentCreates &&
+            raw['creado'] != false &&
+            raw['sync_uuid'] != row['sync_uuid']) {
+          result.errors.add(
+            'Registro local $localId: la API no confirmó la misma clave UUID.',
+          );
+        }
         if (row == null ||
             cloudId <= 0 ||
             raw['creado'] == false ||
@@ -186,6 +246,9 @@ class OperationSyncEngine {
           localId,
           cloudId,
           reused ? 0.5 : state(row['envio']),
+          cloudHash: raw['cloud_hash'] is String
+              ? raw['cloud_hash'] as String
+              : null,
         );
         acknowledged.add(localId);
         remoteIds.add(cloudId);
@@ -236,12 +299,26 @@ class OperationSyncEngine {
         final id = integer(row['local_id']);
         final cloudId = integer(row['idNube']);
         if (confirmed.contains(cloudId)) {
-          await store.confirm(id, cloudId, state(row['envio']));
+          final acknowledgement = response.whereType<Map>().firstWhere(
+            (r) => integer(r['idNube']) == cloudId && r['actualizado'] == true,
+          );
+          await store.confirm(
+            id,
+            cloudId,
+            state(row['envio']),
+            cloudHash: acknowledgement['cloud_hash'] is String
+                ? acknowledgement['cloud_hash'] as String
+                : null,
+          );
           result.updated++;
         } else {
           await store.mark(id, 0.5);
+          final rejected = response.whereType<Map>().where(
+            (r) => integer(r['idNube']) == cloudId,
+          );
           result.errors.add(
-            'La nube no confirmó la actualización del registro $id.',
+            'La nube no confirmó la actualización del registro $id.'
+            '${rejected.isNotEmpty && rejected.first['error'] != null ? " Detalle: ${rejected.first['error']}" : ""}',
           );
         }
       }

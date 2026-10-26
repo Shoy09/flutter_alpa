@@ -48,7 +48,10 @@ Future<void> handleLogin() async {
       }
 
       await DatabaseHelper().setCurrentUserDni(dni);
-      await DatabaseHelper().saveUser(userData, pass);
+      await DatabaseHelper().saveUser({
+        ...userData,
+        'codigo_dni': dni,
+      }, pass);
 
       if (mounted) {
         Navigator.pushReplacement(

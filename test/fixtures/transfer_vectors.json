@@ -1,0 +1,206 @@
+[
+  {
+    "type": "tal_largo",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "seccion": "",
+      "modelo_equipo": "",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "2e7d42350f715b3dd112c5ae1a2690656b17ed3128d7de61e761b25f5a028a70"
+  },
+  {
+    "type": "tal_horizontal",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "seccion": "",
+      "modelo_equipo": "",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "2e7d42350f715b3dd112c5ae1a2690656b17ed3128d7de61e761b25f5a028a70"
+  },
+  {
+    "type": "empernador",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "seccion": "",
+      "tipo_equipo": "",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "a69d688e128c5d634379f8c6a289db30bc550c1485a3da65c90bbaede6c95a98"
+  },
+  {
+    "type": "carguio",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "seccion": "",
+      "capacidad": "",
+      "tipo_equipo": "",
+      "programa_trabajo": "{}",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "848e88c91eab02d62655d72ccb7efe469872e860c12c71afbe706807fc0b7e8e"
+  },
+  {
+    "type": "rompebanco",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "532862cf2c0dc9917caac587f0233e1ce78a7cfa96ea15b0f73d6508e3c58320"
+  },
+  {
+    "type": "scissor",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "guardia": "",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "1c396edec3db4e52887f8893fb5d859a073e1c17bb92146d0f7a88dfc4b60862"
+  },
+  {
+    "type": "anfochanger",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "532862cf2c0dc9917caac587f0233e1ce78a7cfa96ea15b0f73d6508e3c58320"
+  },
+  {
+    "type": "scalamin",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "guardia": "",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "1c396edec3db4e52887f8893fb5d859a073e1c17bb92146d0f7a88dfc4b60862"
+  },
+  {
+    "type": "dumper",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "equipo": "",
+      "n_equipo": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "condiciones_equipo": "{}",
+      "check_list": "{}",
+      "control_llantas": "{}",
+      "seccion": "",
+      "capacidad": "",
+      "tipo_equipo": "",
+      "programa_trabajo": "{}",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "848e88c91eab02d62655d72ccb7efe469872e860c12c71afbe706807fc0b7e8e"
+  },
+  {
+    "type": "volquetes",
+    "payload": {
+      "fecha": "",
+      "turno": "",
+      "operador": "PRUEBA ? ?",
+      "jefe_guardia": "",
+      "estado": "cerrado",
+      "guardia": "",
+      "n_volquete": "",
+      "empresa": "",
+      "registros": "[{\"2\":\"dos\",\"10\":\"diez\",\"horas\":1.0,\"nested\":{\"z\":null,\"a\":true}}]",
+      "horometros": "{}",
+      "sync_uuid": "c734e68b-9fad-4f42-9711-920cc2d4b84e"
+    },
+    "hash": "42a92570bb531c6c9480c6655ea715485cbd4a5a291dd3c667987115582bca4d"
+  }
+]

@@ -70,10 +70,12 @@ void main() {
   OperationSyncEngine engine({
     OperationSyncApi? service,
     bool idempotent = false,
+    bool strict = false,
   }) => OperationSyncEngine(
     store: SqliteOperationSyncStore(db, 'operations'),
     api: service ?? api,
     idempotentCreates: idempotent,
+    requireIdempotentCreates: strict,
     prepare: (ids, rows) async => [
       for (final row in rows)
         Map<String, dynamic>.from(row)
@@ -108,6 +110,161 @@ void main() {
       whereArgs: [id],
     );
   }
+
+  test(
+    'HTTP 200 row rejection shows the actual reason and keeps protected retry state',
+    () async {
+      await identified(1);
+      api.onCreate = (_) async => [
+        {
+          'local_id': 1,
+          'server_id': null,
+          'creado': false,
+          'error': 'Dato fuera de rango',
+        },
+      ];
+      final result = await engine(
+        strict: true,
+        idempotent: true,
+      ).sync('empernador');
+      expect(result.message, contains('Dato fuera de rango'));
+      expect(result.message, contains('SYNC-20261024-R2'));
+      expect((await row(1))['envio'], 3);
+      expect((await row(1))['sync_retry_safe'], 1);
+    },
+  );
+
+  test(
+    'production mode never POSTs when capability probe fails; new row stays pending',
+    () async {
+      await identified(1);
+      final unavailable = await engine(
+        strict: true,
+      ).sync('empernador', ids: {1});
+      expect(api.creates, isEmpty);
+      expect(unavailable.retryable, 1);
+      expect(unavailable.uncertain, 0);
+      expect((await row(1))['envio'], 0);
+      expect((await row(1))['sync_retry_safe'], 0);
+      api.onCreate = (rows) async => [
+        {
+          'local_id': 1,
+          'server_id': 800,
+          'sync_uuid': rows.single['sync_uuid'],
+          'creado': true,
+        },
+      ];
+      final retry = await engine(
+        strict: true,
+        idempotent: true,
+      ).sync('empernador', ids: {1});
+      expect(retry.created, 1);
+      expect((await row(1))['envio'], 1);
+      expect((await row(1))['sync_retry_safe'], 1);
+    },
+  );
+
+  test('known-ID updates still work when capability probe fails', () async {
+    await insert(1, cloud: 80, envio: 0.5);
+    await insert(2);
+    final result = await engine(strict: true).sync('empernador');
+    expect(result.updated, 1);
+    expect(api.creates, isEmpty);
+    expect((await row(1))['envio'], 1);
+    expect((await row(2))['envio'], 0);
+  });
+
+  test(
+    'protected new POST timeout and failed probe are not described as historical',
+    () async {
+      await identified(1);
+      api.onCreate = (_) async => throw TimeoutException('lost response');
+      await engine(strict: true, idempotent: true).sync('empernador');
+      final waiting = await engine(strict: true).sync('empernador');
+      expect(api.creates.length, 1);
+      expect(waiting.blocked.single['can_recover'], isFalse);
+      expect(waiting.message, contains('tiene clave protegida'));
+      expect(waiting.message, isNot(contains('registros antiguos')));
+      expect((await row(1))['sync_retry_safe'], 1);
+    },
+  );
+
+  test(
+    'verified-absent recovery keeps UUID and allows one protected creation',
+    () async {
+      await identified(1, envio: 3);
+      final blocked = await engine(
+        strict: true,
+        idempotent: true,
+      ).sync('empernador', ids: {1});
+      expect(blocked.blocked.single['can_recover'], isTrue);
+      expect(api.creates, isEmpty);
+      final store = SqliteOperationSyncStore(db, 'operations');
+      await store.releaseVerifiedAbsent(1, identity);
+      expect((await row(1))['sync_uuid'], identity);
+      expect((await row(1))['sync_retry_safe'], 1);
+      await expectLater(
+        store.releaseVerifiedAbsent(1, identity),
+        throwsStateError,
+      );
+      api.onCreate = (_) async => [
+        {
+          'local_id': 1,
+          'server_id': 900,
+          'sync_uuid': identity,
+          'creado': true,
+        },
+      ];
+      expect(
+        (await engine(
+          strict: true,
+          idempotent: true,
+        ).sync('empernador')).created,
+        1,
+      );
+      expect(api.creates.length, 1);
+      expect((await row(1))['idNube'], 900);
+    },
+  );
+
+  test(
+    'recovery refuses changed identities and known cloud IDs, and releases stale state 2 after verification',
+    () async {
+      await identified(1, envio: 3);
+      final store = SqliteOperationSyncStore(db, 'operations');
+      await expectLater(
+        store.releaseVerifiedAbsent(1, 'e734e68b-9fad-4f42-9711-920cc2d4b84e'),
+        throwsStateError,
+      );
+      expect((await row(1))['envio'], 3);
+      await db.update('operations', {'idNube': 50}, where: 'id = 1');
+      await expectLater(
+        store.releaseVerifiedAbsent(1, identity),
+        throwsStateError,
+      );
+      await db.update('operations', {'idNube': 0, 'envio': 2}, where: 'id = 1');
+      await store.releaseVerifiedAbsent(1, identity);
+      expect((await row(1))['envio'], 0);
+    },
+  );
+
+  test('HTTP rejection includes actual server status and reason', () async {
+    final client = MockClient(
+      (_) async =>
+          http.Response('{"ok":false,"error":"Campo no permitido"}', 400),
+    );
+    addTearDown(client.close);
+    await expectLater(
+      OperacionesService(client: client).crearParciales('empernador', []),
+      throwsA(
+        predicate(
+          (error) =>
+              '$error'.contains('HTTP 400') &&
+              '$error'.contains('Campo no permitido'),
+        ),
+      ),
+    );
+  });
 
   test(
     'Lost POST response retries same UUID and then updates recovered data',
@@ -241,6 +398,7 @@ void main() {
       const key = 'c734e68b-9fad-4f42-9711-920cc2d4b84e';
       await db.update('operations', {'sync_uuid': key}, where: 'id = 1');
       OperationSyncEngine subject() => OperationSyncEngine(
+        requireIdempotentCreates: false,
         store: SqliteOperationSyncStore(db, 'operations'),
         api: api,
         prepare: (ids, rows) async => [
@@ -413,6 +571,7 @@ void main() {
       await insert(1);
       await insert(2);
       final subject = OperationSyncEngine(
+        requireIdempotentCreates: false,
         store: SqliteOperationSyncStore(db, 'operations'),
         api: api,
         prepare: (ids, rows) async {

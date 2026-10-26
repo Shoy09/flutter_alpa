@@ -1,4 +1,6 @@
 import 'operation_sync_identity.dart';
+import 'package:i_miner/core/transfer/transfer_store.dart';
+import 'package:i_miner/services/user_profile_data.dart';
 import 'checklist_local_store.dart';
 import 'package:i_miner/models/checklist_item.dart';
 import 'dart:convert';
@@ -33,7 +35,7 @@ class DatabaseHelper {
   static Database? _sharedDatabase;
   static String? _currentUserDni;
   static bool _isInitialized = false;
-  static const int _userDbVersion = 4;
+  static const int _userDbVersion = 7;
   static const int _sharedDbVersion = 2;
 
   DatabaseHelper._internal() {
@@ -629,9 +631,12 @@ await db.execute('''
   ''');
 
     await OperationSyncIdentity.migrate(db);
+    await TransferStore.migrate(db);
   }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  if (oldVersion >= 4 && oldVersion < 7) await OperationSyncIdentity.migrate(db);
+  if (oldVersion < 5) await TransferStore.migrate(db);
   if (oldVersion < 4) {
     await OperationSyncIdentity.migrate(db);
   }
@@ -1109,6 +1114,19 @@ Future<void> replaceAllShared(String table, List<Map<String, dynamic>> rows) asy
 
 Future<void> saveUser(Map<String, dynamic> userData, String password) async {
     final db = await database;
+    final dni = userData['codigo_dni']?.toString();
+    if (dni == null || dni != _currentUserDni) {
+      throw const FormatException('El perfil no corresponde al usuario actual');
+    }
+    Map<String, dynamic>? cached = await getUserByDni(dni);
+    if (cached == null && userData['operaciones_autorizadas'] == null) {
+      final sharedDb = await sharedDatabase;
+      final rows = await sharedDb.query(
+        'UsuariosMaestros', where: 'codigo_dni = ?', whereArgs: [dni],
+      );
+      if (rows.isNotEmpty) cached = rows.first;
+    }
+    userData = mergeUserProfile(userData, cached);
     
     // 🔐 Usar bcrypt para hashear la contraseña (compatible con backend)
     final hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());

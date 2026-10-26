@@ -9,19 +9,109 @@ class OperacionesService implements OperationSyncApi {
     : _client = client ?? _defaultClient;
   static final http.Client _defaultClient = http.Client();
   final http.Client _client;
+  String lastCapabilityProblem = '';
+
+  Future<Map<String, dynamic>> resolveClosedTransfer(
+    String type,
+    Map<String, dynamic> payload,
+    String hash,
+    String? remoteHash,
+    bool verifiedAbsent,
+  ) async {
+    final response = await _client
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}/operaciones/confirm-closed-transfer'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'tipo': type,
+            'payload': payload,
+            'hash': hash,
+            'review': {
+              'expected_remote_hash': remoteHash,
+              'verified_absent': verifiedAbsent,
+            },
+          }),
+        )
+        .timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw StateError(
+        'La API no confirmó la conciliación (${response.statusCode})',
+      );
+    }
+    final body = jsonDecode(response.body);
+    if (body is! Map || body['ok'] != true || body['data'] is! Map) {
+      throw StateError('Respuesta de conciliación inválida');
+    }
+    return Map<String, dynamic>.from(body['data']);
+  }
+
+  Future<Map<String, dynamic>> lookupSync(
+    String type,
+    Map<String, dynamic> payload,
+    String hash,
+  ) async {
+    final response = await _client
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}/operaciones/lookup-sync'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'tipo': type, 'payload': payload, 'hash': hash}),
+        )
+        .timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw StateError(
+        'Consulta de recuperación HTTP ${response.statusCode}. No se creó ningún registro.',
+      );
+    }
+    final body = jsonDecode(response.body);
+    if (body is! Map || body['ok'] != true || body['data'] is! Map) {
+      throw StateError('Consulta de recuperación inválida');
+    }
+    return Map<String, dynamic>.from(body['data']);
+  }
+
+  Future<Map<String, dynamic>> confirmClosedTransfer(
+    String type,
+    Map<String, dynamic> payload,
+    String hash,
+  ) async {
+    final response = await _client
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}/operaciones/confirm-closed-transfer'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'tipo': type, 'payload': payload, 'hash': hash}),
+        )
+        .timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw StateError('Confirmación de transferencia no disponible');
+    }
+    final body = jsonDecode(response.body);
+    if (body is! Map || body['ok'] != true || body['data'] is! Map) {
+      throw StateError('Confirmación de transferencia inválida');
+    }
+    return Map<String, dynamic>.from(body['data']);
+  }
 
   @override
   Future<bool> supportsIdempotentCreates() async {
+    lastCapabilityProblem = '';
     try {
       final response = await _client
           .get(Uri.parse('${ApiConfig.baseUrl}/operaciones/sync-capabilities'))
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode != 200) return false;
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        lastCapabilityProblem =
+            'La comprobación respondió HTTP ${response.statusCode}.';
+        return false;
+      }
       final body = jsonDecode(response.body);
-      return body is Map &&
-          body['ok'] == true &&
-          body['sync_uuid_version'] == 1;
-    } catch (_) {
+      final supported =
+          body is Map && body['ok'] == true && body['sync_uuid_version'] == 1;
+      if (!supported) {
+        lastCapabilityProblem = 'La API no confirmó el protocolo UUID.';
+      }
+      return supported;
+    } catch (error) {
+      lastCapabilityProblem = 'No se pudo completar la comprobación: $error';
       return false;
     }
   }
@@ -97,7 +187,17 @@ class OperacionesService implements OperationSyncApi {
         return jsonData['data'];
       }
 
-      return null;
+      String detail = '';
+      try {
+        final errorBody = jsonDecode(response.body);
+        if (errorBody is Map && errorBody['error'] != null) {
+          detail = '${errorBody['error']}';
+          if (detail.length > 300) detail = detail.substring(0, 300);
+        }
+      } catch (_) {}
+      throw StateError(
+        'Creación HTTP ${response.statusCode}${detail.isEmpty ? '' : ': $detail'}',
+      );
     } catch (e) {
       debugPrint('❌ Error crearParciales: $e');
 

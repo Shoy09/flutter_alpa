@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import '../../core/sync/sync_attempts.dart';
 
 /// Identidad persistente de las operaciones, independiente del ID de cada tablet.
 class OperationSyncIdentity {
@@ -25,6 +26,7 @@ class OperationSyncIdentity {
 
   /// Se ejecuta dentro de la transacción de creación o migración de sqflite.
   static Future<void> migrate(DatabaseExecutor db) async {
+    await SyncAttempts.migrate(db);
     for (final table in tables) {
       final columns = await db.rawQuery('PRAGMA table_info($table)');
       if (!columns.any((column) => column['name'] == 'sync_uuid')) {
@@ -34,6 +36,9 @@ class OperationSyncIdentity {
         await db.execute(
           'ALTER TABLE $table ADD COLUMN sync_retry_safe INTEGER NOT NULL DEFAULT 0',
         );
+      }
+      if (!columns.any((column) => column['name'] == 'sync_cloud_hash')) {
+        await db.execute('ALTER TABLE $table ADD COLUMN sync_cloud_hash TEXT');
       }
       // Conserva idNube, envio y todas las claves ya asignadas.
       await db.execute(
