@@ -8,11 +8,46 @@ class SqliteOperationSyncStore implements OperationSyncStore {
     this.database,
     this.table, {
     this.excludeTransferType,
-  });
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
   final String? excludeTransferType;
   final Database database;
   final String table;
+  final DateTime Function() _now;
   final _snapshots = <int, OperationPayload>{};
+  Set<String>? _columns;
+  int _deferred = 0;
+
+  /// Columnas de seguimiento de fallos (no forman parte del contenido).
+  static const failureColumns = {
+    'sync_failures',
+    'sync_last_error',
+    'sync_next_attempt',
+  };
+
+  /// Espera antes del siguiente intento automático según fallos seguidos.
+  /// Los dos primeros fallos se reintentan en el ciclo normal.
+  static int backoffMs(int failures) => switch (failures) {
+    <= 2 => 0,
+    3 => 5 * 60 * 1000,
+    4 => 10 * 60 * 1000,
+    5 => 20 * 60 * 1000,
+    _ => 60 * 60 * 1000,
+  };
+
+  @override
+  int get deferred => _deferred;
+
+  Future<bool> _tracksFailures() async {
+    _columns ??= {
+      for (final column in await database.rawQuery(
+        'PRAGMA table_info($table)',
+      ))
+        '${column['name']}',
+    };
+    return _columns!.containsAll(failureColumns);
+  }
+
   @override
   Future<List<String>> attemptedHashes(String uuid) async {
     final types = TransferContent.tables.entries.where(
@@ -29,6 +64,7 @@ class SqliteOperationSyncStore implements OperationSyncStore {
     if (!OperationSyncEngine.hasIdentity({'sync_uuid': expectedUuid})) {
       throw StateError('Clave de sincronización inválida');
     }
+    final tracks = await _tracksFailures();
     await database.transaction((txn) async {
       if (excludeTransferType != null) {
         final copies = await txn.query(
@@ -45,7 +81,11 @@ class SqliteOperationSyncStore implements OperationSyncStore {
       }
       final changed = await txn.update(
         table,
-        {'envio': 0, 'sync_retry_safe': 1},
+        {
+          'envio': 0,
+          'sync_retry_safe': 1,
+          if (tracks) 'sync_next_attempt': null,
+        },
         where:
             'id = ? AND envio IN (2, 3) AND COALESCE(idNube, 0) = 0 AND sync_uuid = ?',
         whereArgs: [id, expectedUuid],
@@ -60,21 +100,46 @@ class SqliteOperationSyncStore implements OperationSyncStore {
 
   @override
   Future<List<OperationPayload>> load(Set<int>? ids) async {
+    _deferred = 0;
     if (ids != null && ids.isEmpty) return [];
+    final excludeTransfers = excludeTransferType == null
+        ? ''
+        : ' AND NOT EXISTS (SELECT 1 FROM LocalTransfers t WHERE t.direction = ? AND t.type = ? AND t.uuid = $table.sync_uuid)';
+    final transferArgs = [
+      if (excludeTransferType != null) ...['outbox', excludeTransferType],
+    ];
+    // La selección manual siempre intenta; el ciclo automático respeta la
+    // espera de los registros que fallaron varias veces seguidas.
+    final applyBackoff = ids == null && await _tracksFailures();
+    final now = _now().millisecondsSinceEpoch;
+    const automatic = "COALESCE(NULLIF(envio, ''), 0) IN (0, 0.5, 2, 3)";
     final rows = await database.query(
       table,
       where:
           (ids == null
-              ? "COALESCE(NULLIF(envio, ''), 0) IN (0, 0.5, 2, 3)"
+              ? automatic
               : 'id IN (${List.filled(ids.length, '?').join(',')})') +
-          (excludeTransferType == null
-              ? ''
-              : ' AND NOT EXISTS (SELECT 1 FROM LocalTransfers t WHERE t.direction = ? AND t.type = ? AND t.uuid = $table.sync_uuid)'),
+          excludeTransfers +
+          (applyBackoff
+              ? ' AND (sync_next_attempt IS NULL OR sync_next_attempt <= ?)'
+              : ''),
       whereArgs: [
         if (ids != null) ...ids,
-        if (excludeTransferType != null) ...['outbox', excludeTransferType],
+        ...transferArgs,
+        if (applyBackoff) now,
       ],
     );
+    if (applyBackoff) {
+      _deferred =
+          Sqflite.firstIntValue(
+            await database.rawQuery(
+              'SELECT COUNT(*) FROM $table WHERE $automatic$excludeTransfers '
+              'AND sync_next_attempt > ?',
+              [...transferArgs, now],
+            ),
+          ) ??
+          0;
+    }
     for (final row in rows) {
       _snapshots[OperationSyncEngine.integer(row['id'])] = row;
     }
@@ -118,12 +183,40 @@ class SqliteOperationSyncStore implements OperationSyncStore {
   }
 
   @override
-  Future<void> mark(int id, double state) async {
-    await database.update(
-      table,
-      {'envio': state},
-      where: 'id = ?',
-      whereArgs: [id],
+  Future<void> mark(
+    int id,
+    double state, {
+    String? reason,
+    bool penalize = false,
+  }) async {
+    if (!await _tracksFailures()) {
+      await database.update(
+        table,
+        {'envio': state},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return;
+    }
+    final text = reason == null
+        ? null
+        : reason.length > 300
+        ? reason.substring(0, 300)
+        : reason;
+    final now = _now().millisecondsSinceEpoch;
+    // En UPDATE, sync_failures del lado derecho es el valor anterior.
+    await database.rawUpdate(
+      'UPDATE $table SET envio = ?, '
+      'sync_failures = COALESCE(sync_failures, 0) + 1, '
+      'sync_last_error = COALESCE(?, sync_last_error), '
+      'sync_next_attempt = CASE WHEN ? = 0 THEN NULL ELSE ? + CASE '
+      'WHEN COALESCE(sync_failures, 0) + 1 <= 2 THEN 0 '
+      'WHEN COALESCE(sync_failures, 0) + 1 = 3 THEN ${backoffMs(3)} '
+      'WHEN COALESCE(sync_failures, 0) + 1 = 4 THEN ${backoffMs(4)} '
+      'WHEN COALESCE(sync_failures, 0) + 1 = 5 THEN ${backoffMs(5)} '
+      'ELSE ${backoffMs(6)} END END '
+      'WHERE id = ?',
+      [state, text, penalize ? 1 : 0, now, id],
     );
   }
 
@@ -134,6 +227,7 @@ class SqliteOperationSyncStore implements OperationSyncStore {
     double state, {
     String? cloudHash,
   }) async {
+    final tracks = await _tracksFailures();
     await database.transaction((transaction) async {
       final rows = await transaction.query(
         table,
@@ -151,7 +245,9 @@ class SqliteOperationSyncStore implements OperationSyncStore {
                 (key) =>
                     key != 'envio' &&
                     key != 'idNube' &&
-                    key != 'sync_retry_safe',
+                    key != 'sync_retry_safe' &&
+                    key != 'sync_cloud_hash' &&
+                    !failureColumns.contains(key),
               )
               .any((key) => current[key] != snapshot[key]);
       await transaction.update(
@@ -165,6 +261,11 @@ class SqliteOperationSyncStore implements OperationSyncStore {
                     RegExp(r'^[0-9a-f]{64}$').hasMatch(cloudHash)
                 ? cloudHash
                 : null,
+          if (tracks) ...{
+            'sync_failures': 0,
+            'sync_last_error': null,
+            'sync_next_attempt': null,
+          },
         },
         where: 'id = ?',
         whereArgs: [id],

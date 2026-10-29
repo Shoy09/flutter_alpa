@@ -8,6 +8,7 @@ class UnconfirmedRecovery {
     required this.store,
     required this.prepare,
     required this.lookup,
+    this.shouldStop,
   });
   final String type;
   final OperationSyncStore store;
@@ -18,6 +19,7 @@ class UnconfirmedRecovery {
   prepare;
   final Future<Map<String, dynamic>> Function(String, OperationPayload, String)
   lookup;
+  final bool Function()? shouldStop;
   final conflicts = <int>{};
 
   Future<OperationSyncResult> run({Set<int>? ids}) async {
@@ -31,8 +33,13 @@ class UnconfirmedRecovery {
           OperationSyncEngine.hasIdentity(row),
     );
     for (final row in rows) {
+      if (shouldStop?.call() == true) {
+        result.interrupted = true;
+        break;
+      }
+      final id = OperationSyncEngine.integer(row['id']);
+      final currentState = OperationSyncEngine.state(row['envio']);
       try {
-        final id = OperationSyncEngine.integer(row['id']);
         final payload = (await prepare({id}, [row])).single;
         final hash = TransferContent.fingerprint(type, payload);
         final answer = await lookup(type, payload, hash);
@@ -68,19 +75,27 @@ class UnconfirmedRecovery {
           result.recovered++;
         } else if (answer['status'] == 'conflict') {
           conflicts.add(id);
-          result.errors.add(
-            'Registro local $id: existe en nube con ID ${answer['server_id']}, pero su contenido es diferente. No se modificó.',
-          );
+          final message =
+              'Existe en nube con ID ${answer['server_id']}, pero su contenido es diferente. No se modificó.';
+          // Se deja constancia en el registro y se espacian las consultas.
+          await store.mark(id, currentState, reason: message, penalize: true);
+          result.errors.add('Registro local $id: $message');
         } else if (answer['status'] == 'missing') {
-          result.errors.add(
-            'Registro local $id: no se encontró su UUID en nube. Revisa también posibles copias sin UUID antes de recuperarlo.',
-          );
+          const message =
+              'No se encontró su UUID en nube. Revisa también posibles copias sin UUID antes de recuperarlo.';
+          await store.mark(id, currentState, reason: message, penalize: true);
+          result.errors.add('Registro local $id: $message');
         } else {
           throw StateError('La nube no confirmó la consulta');
         }
       } catch (error) {
         result.errors.add('Recuperación sin escrituras en nube: $error');
-        break;
+        // Sin red no tiene sentido esperar otro timeout por cada registro.
+        // Un error propio de este registro no debe frenar a los demás.
+        if (isNetworkError(error)) {
+          result.networkFailed = true;
+          break;
+        }
       }
     }
     return result;

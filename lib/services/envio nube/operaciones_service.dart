@@ -11,6 +11,9 @@ class OperacionesService implements OperationSyncApi {
   final http.Client _client;
   String lastCapabilityProblem = '';
 
+  /// La última comprobación falló por red o tiempo de espera (no por la API).
+  bool lastCapabilityNetworkError = false;
+
   Future<Map<String, dynamic>> resolveClosedTransfer(
     String type,
     Map<String, dynamic> payload,
@@ -21,6 +24,40 @@ class OperacionesService implements OperationSyncApi {
     final response = await _client
         .post(
           Uri.parse('${ApiConfig.baseUrl}/operaciones/confirm-closed-transfer'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'tipo': type,
+            'payload': payload,
+            'hash': hash,
+            'review': {
+              'expected_remote_hash': remoteHash,
+              'verified_absent': verifiedAbsent,
+            },
+          }),
+        )
+        .timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw StateError(
+        'La API no confirmó la conciliación (${response.statusCode})',
+      );
+    }
+    final body = jsonDecode(response.body);
+    if (body is! Map || body['ok'] != true || body['data'] is! Map) {
+      throw StateError('Respuesta de conciliación inválida');
+    }
+    return Map<String, dynamic>.from(body['data']);
+  }
+
+  Future<Map<String, dynamic>> resolveSyncConflict(
+    String type,
+    Map<String, dynamic> payload,
+    String hash,
+    String? remoteHash,
+    bool verifiedAbsent,
+  ) async {
+    final response = await _client
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}/operaciones/resolve-sync-conflict'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'tipo': type,
@@ -94,6 +131,7 @@ class OperacionesService implements OperationSyncApi {
   @override
   Future<bool> supportsIdempotentCreates() async {
     lastCapabilityProblem = '';
+    lastCapabilityNetworkError = false;
     try {
       final response = await _client
           .get(Uri.parse('${ApiConfig.baseUrl}/operaciones/sync-capabilities'))
@@ -112,6 +150,7 @@ class OperacionesService implements OperationSyncApi {
       return supported;
     } catch (error) {
       lastCapabilityProblem = 'No se pudo completar la comprobación: $error';
+      lastCapabilityNetworkError = isNetworkError(error);
       return false;
     }
   }

@@ -24,7 +24,7 @@ class TransferStore {
           'sync_retry_safe',
         ],
         where:
-            "estado = 'cerrado' AND (COALESCE(envio, 0) != 1 OR COALESCE(idNube, 0) <= 0) "
+            "estado = 'cerrado' "
             'AND NOT EXISTS (SELECT 1 FROM LocalTransfers t WHERE t.direction = ? AND t.type = ? AND t.uuid = ${entry.value}.sync_uuid)',
         whereArgs: ['outbox', entry.key],
       );
@@ -34,6 +34,7 @@ class TransferStore {
         result.add({
           ...row,
           'type': entry.key,
+          'cloud_confirmed': state == 1 && cloudId > 0,
           'needs_review':
               cloudId <= 0 &&
               (state == 1 ||
@@ -59,6 +60,10 @@ class TransferStore {
         'ALTER TABLE LocalTransfers ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0',
       );
     }
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_LocalTransfers_type_status_updated '
+      'ON LocalTransfers(type, status, updated_at)',
+    );
   }
 
   static final uuidPattern = RegExp(
@@ -66,6 +71,16 @@ class TransferStore {
   );
   static void validate(Map<String, dynamic> item) {
     final payload = Map<String, dynamic>.from(item['payload'] as Map);
+    if (payload['shared_as_cloud_copy'] == true &&
+        (num.tryParse('${payload['envio']}') != 1 ||
+            (num.tryParse('${payload['idNube']}') ?? 0) <= 0 ||
+            item['needs_review'] == true ||
+            (payload['base_cloud_hash'] != null &&
+                payload['base_cloud_hash'] != item['hash']))) {
+      throw const FormatException(
+        'La copia no tiene una confirmación de nube coherente',
+      );
+    }
     if (payload['base_cloud_hash'] != null &&
         (payload['base_cloud_hash'] is! String ||
             !RegExp(
@@ -98,8 +113,42 @@ class TransferStore {
     orderBy: 'updated_at DESC',
   );
 
+  Future<List<Map<String, Object?>>> syncQueue({
+    String? type,
+    required DateTime recheckSince,
+  }) async {
+    final result = <Map<String, Object?>>[];
+    for (final entry in TransferContent.tables.entries) {
+      if (type != null && entry.key != type) continue;
+      final rows = await db.query(
+        'LocalTransfers',
+        where:
+            'type = ? AND (status != ? OR (direction = ? AND '
+            '(updated_at >= ? OR NOT EXISTS (SELECT 1 FROM ${entry.value} source '
+            'WHERE source.id = LocalTransfers.local_id '
+            'AND source.sync_uuid = LocalTransfers.uuid '
+            'AND COALESCE(source.envio, 0) = 1 '
+            'AND COALESCE(source.idNube, 0) = LocalTransfers.cloud_id))))',
+        whereArgs: [
+          entry.key,
+          'cloud',
+          'outbox',
+          recheckSince.toUtc().toIso8601String(),
+        ],
+        orderBy: 'updated_at ASC',
+      );
+      result.addAll(rows);
+    }
+    return result;
+  }
+
   Future<Map<String, dynamic>> receive(Map<String, dynamic> item) async {
     validate(item);
+    final payload = Map<String, dynamic>.from(item['payload'] as Map);
+    final alreadyCloud = payload['shared_as_cloud_copy'] == true;
+    final cloudId = alreadyCloud
+        ? num.parse('${payload['idNube']}').toInt()
+        : 0;
     return db.transaction((txn) async {
       final rows = await txn.query(
         'LocalTransfers',
@@ -115,6 +164,19 @@ class TransferStore {
             'status': 'conflict',
             'message': 'La maestra ya conserva otra versión. No se reemplazó.',
           };
+        }
+        if (alreadyCloud) {
+          if ((num.tryParse('${existing['cloud_id']}') ?? 0) > 0 &&
+              existing['cloud_id'] != cloudId) {
+            return {...receipt(existing), 'status': 'conflict'};
+          }
+          await txn.update(
+            'LocalTransfers',
+            {'status': 'cloud', 'cloud_id': cloudId, 'needs_review': 0},
+            where: 'direction = ? AND type = ? AND uuid = ?',
+            whereArgs: ['inbox', item['type'], item['uuid']],
+          );
+          return {...receipt(existing), 'status': 'cloud', 'cloud_id': cloudId};
         }
         if (item['needs_review'] == true && existing['status'] != 'cloud') {
           await txn.update(
@@ -134,16 +196,24 @@ class TransferStore {
         'hash': item['hash'],
         'payload': jsonEncode(item['payload']),
         'source': item['source'],
-        'status': item['needs_review'] == true ? 'review' : 'received',
+        'status': alreadyCloud
+            ? 'cloud'
+            : item['needs_review'] == true
+            ? 'review'
+            : 'received',
         'needs_review': item['needs_review'] == true ? 1 : 0,
-        'cloud_id': 0,
+        'cloud_id': cloudId,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
       return {
         'uuid': item['uuid'],
         'hash': item['hash'],
-        'status': item['needs_review'] == true ? 'review' : 'received',
-        'cloud_id': 0,
+        'status': alreadyCloud
+            ? 'cloud'
+            : item['needs_review'] == true
+            ? 'review'
+            : 'received',
+        'cloud_id': cloudId,
       };
     });
   }

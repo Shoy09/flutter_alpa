@@ -417,6 +417,7 @@ class _DetalleSeccionHorizontalScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'tal_horizontal',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

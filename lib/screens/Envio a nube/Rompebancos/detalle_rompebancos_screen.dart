@@ -417,6 +417,7 @@ class _DetalleSeccionRompeBancoScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'rompebanco',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

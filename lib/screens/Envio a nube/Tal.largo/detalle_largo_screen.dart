@@ -415,6 +415,7 @@ class _DetalleSeccionScreenState extends State<DetalleSeccionScreen> {
 
         return OperacionCard(
           operacion: item,
+          syncType: 'tal_largo',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

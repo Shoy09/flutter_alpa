@@ -35,7 +35,7 @@ class DatabaseHelper {
   static Database? _sharedDatabase;
   static String? _currentUserDni;
   static bool _isInitialized = false;
-  static const int _userDbVersion = 7;
+  static const int _userDbVersion = 9;
   static const int _sharedDbVersion = 2;
 
   DatabaseHelper._internal() {
@@ -635,8 +635,8 @@ await db.execute('''
   }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-  if (oldVersion >= 4 && oldVersion < 7) await OperationSyncIdentity.migrate(db);
-  if (oldVersion < 5) await TransferStore.migrate(db);
+  if (oldVersion >= 4 && oldVersion < 8) await OperationSyncIdentity.migrate(db);
+  if (oldVersion < 9) await TransferStore.migrate(db);
   if (oldVersion < 4) {
     await OperationSyncIdentity.migrate(db);
   }

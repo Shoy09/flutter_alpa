@@ -417,6 +417,7 @@ class _DetalleSeccionVolquetesScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'volquetes',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

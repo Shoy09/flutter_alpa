@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:i_miner/core/sync/sync_service.dart';
+import 'package:i_miner/screens/transfer/transfer_review_screen.dart';
+
+enum _SyncFailureKind { network, versionConflict, other }
 
 class OperacionCard extends StatelessWidget {
   final Map<String, dynamic> operacion;
   final bool isSelected;
   final bool isEnviado;
   final VoidCallback onTap;
+  final String? syncType;
   final Color? primaryColor;
 
   const OperacionCard({
@@ -13,6 +18,7 @@ class OperacionCard extends StatelessWidget {
     required this.isSelected,
     required this.isEnviado,
     required this.onTap,
+    this.syncType,
     this.primaryColor = const Color(0xFF1B5E6B),
   }) : super(key: key);
 
@@ -38,8 +44,8 @@ class OperacionCard extends StatelessWidget {
             color: isSelected
                 ? primaryColor!
                 : isEnviado
-                    ? Colors.green.shade200
-                    : Colors.grey.shade200,
+                ? Colors.green.shade200
+                : Colors.grey.shade200,
             width: isSelected ? 2 : 1,
           ),
           boxShadow: [
@@ -83,7 +89,9 @@ class OperacionCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _getEstadoColor(operacion['estado']).withOpacity(0.1),
+                      color: _getEstadoColor(
+                        operacion['estado'],
+                      ).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(
@@ -140,9 +148,9 @@ class OperacionCard extends StatelessWidget {
                     ),
                 ],
               ),
-              
+
               const SizedBox(height: 12),
-              
+
               // Información principal
               Row(
                 children: [
@@ -159,9 +167,9 @@ class OperacionCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 8),
-              
+
               Row(
                 children: [
                   _buildInfoItem(
@@ -177,9 +185,9 @@ class OperacionCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 8),
-              
+
               Row(
                 children: [
                   _buildInfoItem(
@@ -195,9 +203,9 @@ class OperacionCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 12),
-              
+
               // Footer con sección
               Container(
                 padding: const EdgeInsets.all(8),
@@ -207,11 +215,7 @@ class OperacionCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.category,
-                      size: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    Icon(Icons.category, size: 14, color: Colors.grey.shade600),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -239,9 +243,140 @@ class OperacionCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (_failures > 0 && !isEnviado) ...[
+                const SizedBox(height: 8),
+                _buildFailure(),
+                if (syncType != null &&
+                    '${operacion['sync_uuid'] ?? ''}'.isNotEmpty &&
+                    _failureKind == _SyncFailureKind.versionConflict) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => TransferReviewScreen(
+                              selected: const {},
+                              inspect: () => SyncService().inspectSyncConflict(
+                                syncType!,
+                                int.parse('${operacion['id']}'),
+                              ),
+                              commit: (plan, verifiedAbsent) =>
+                                  SyncService().resolveSyncConflict(
+                                    plan,
+                                    verifiedAbsent: verifiedAbsent,
+                                  ),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.compare_arrows, size: 17),
+                      label: const Text('Revisar versiones con la nube'),
+                    ),
+                  ),
+                ],
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  int get _failures => int.tryParse('${operacion['sync_failures']}') ?? 0;
+
+  _SyncFailureKind get _failureKind {
+    final error = '${operacion['sync_last_error'] ?? ''}'.toLowerCase();
+    const networkMarkers = [
+      'timeoutexception',
+      'socketexception',
+      'handshakeexception',
+      'httpexception',
+      'clientexception',
+      'failed host lookup',
+      'connection refused',
+      'connection reset',
+      'connection timed out',
+      'network is unreachable',
+      'no route to host',
+      'software caused connection abort',
+      'failed to fetch',
+      'network error',
+    ];
+    if (networkMarkers.any(error.contains)) return _SyncFailureKind.network;
+
+    const versionConflictMarkers = [
+      'remote_changed',
+      'cambios posteriores',
+      'conflicto de versión',
+      'conflicto de version',
+      'conflict',
+      'versión remota',
+      'version remota',
+    ];
+    if (versionConflictMarkers.any(error.contains)) {
+      return _SyncFailureKind.versionConflict;
+    }
+    return _SyncFailureKind.other;
+  }
+
+  /// Aviso visible cuando el envío de este registro falló varias veces.
+  Widget _buildFailure() {
+    final error = '${operacion['sync_last_error'] ?? ''}'.trim();
+    final kind = _failureKind;
+    final next = int.tryParse('${operacion['sync_next_attempt']}');
+    final waitUntil = next == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(next);
+    final waiting = waitUntil != null && waitUntil.isAfter(DateTime.now());
+    final title = switch (kind) {
+      _SyncFailureKind.network => 'No se subió: problema de conexión',
+      _SyncFailureKind.versionConflict => 'No se subió: conflicto de versión',
+      _SyncFailureKind.other => 'No se pudo completar la sincronización',
+    };
+    final guidance = switch (kind) {
+      _SyncFailureKind.network =>
+        'Queda pendiente y se reintentará cuando haya conexión.',
+      _SyncFailureKind.versionConflict =>
+        'Compara las versiones con la nube antes de volver a enviar.',
+      _SyncFailureKind.other => 'Revisa el detalle antes de volver a intentar.',
+    };
+    final color = switch (kind) {
+      _SyncFailureKind.network => Colors.blue,
+      _SyncFailureKind.versionConflict => Colors.deepOrange,
+      _SyncFailureKind.other => Colors.orange,
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            kind == _SyncFailureKind.network
+                ? Icons.cloud_off
+                : kind == _SyncFailureKind.versionConflict
+                ? Icons.compare_arrows
+                : Icons.sync_problem,
+            size: 14,
+            color: color.shade800,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '$title · $_failures ${_failures == 1 ? 'intento' : 'intentos'} fallidos'
+              '\n$guidance'
+              '${waiting ? ' · reintento automático desde las ${waitUntil.hour.toString().padLeft(2, '0')}:${waitUntil.minute.toString().padLeft(2, '0')} (o envíalo manualmente)' : ''}'
+              '${error.isEmpty ? '' : '\n$error'}',
+              style: TextStyle(fontSize: 11, color: color.shade900),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -262,10 +397,7 @@ class OperacionCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade500,
-                  ),
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                 ),
                 Text(
                   value,

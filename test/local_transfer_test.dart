@@ -101,6 +101,104 @@ Future<Map<String, Object?>> row(Database db) async =>
     (await db.query(table)).single;
 
 void main() {
+  test(
+    'confirmed closed cloud copy travels by HTTP and master never calls cloud API',
+    () async {
+      final source = await database();
+      final master = await database();
+      addTearDown(source.close);
+      addTearDown(master.close);
+      await insert(source);
+      await source.update(table, {
+        'envio': 1,
+        'idNube': 88,
+        'fecha': '2026-10-26',
+        'turno': 'DÍA',
+      });
+      expect(
+        (await TransferStore(source).available()).single['cloud_confirmed'],
+        isTrue,
+      );
+      var apiCalls = 0;
+      Future<Map<String, dynamic>> noUpload(
+        String _,
+        Map<String, dynamic> __,
+        String ___,
+      ) async {
+        apiCalls++;
+        throw StateError('A confirmed copy must never be uploaded');
+      }
+
+      final origin = TransferCoordinator(source, export, noUpload);
+      final receiver = TransferCoordinator(master, export, noUpload);
+      final server = LocalTransferServer(receiver.store);
+      await server.start(address: InternetAddress.loopbackIPv4, port: 0);
+      addTearDown(server.close);
+      final client = LocalTransferClient();
+      expect(
+        await client.send(
+          origin,
+          'operador',
+          '127.0.0.1',
+          server.code,
+          port: server.port,
+          allowLoopback: true,
+        ),
+        1,
+      );
+      final copy = (await receiver.store.list(direction: 'inbox')).single;
+      expect(copy['status'], 'cloud');
+      expect(copy['cloud_id'], 88);
+      final payload = jsonDecode(copy['payload'] as String);
+      expect(payload['shared_as_cloud_copy'], isTrue);
+      expect(payload['fecha'], '2026-10-26');
+      expect(payload['turno'], 'DÍA');
+      await receiver.sync();
+      await origin.sync();
+      expect(apiCalls, 0);
+      expect((await row(source))['idNube'], 88);
+      expect((await row(source))['envio'], 1);
+      final savedPacket = {
+        'type': type,
+        'uuid': copy['uuid'],
+        'hash': copy['hash'],
+        'payload': payload,
+        'needs_review': false,
+        'source': 'operador',
+      };
+      expect((await receiver.store.receive(savedPacket))['status'], 'cloud');
+      expect((await receiver.store.list()).length, 1);
+    },
+  );
+
+  test(
+    'known-ID pending operation remains uploadable, and inconsistent confirmation is not trusted',
+    () async {
+      final source = await database();
+      final master = await database();
+      addTearDown(source.close);
+      addTearDown(master.close);
+      await insert(source);
+      await source.update(table, {'envio': 0.5, 'idNube': 88});
+      final origin = TransferCoordinator(source, export, Cloud().confirm);
+      final packet = (await origin.prepare('operador')).single;
+      expect(packet['payload']['shared_as_cloud_copy'], isNull);
+      expect(
+        (await TransferStore(master).receive(packet))['status'],
+        'received',
+      );
+      await expectLater(
+        TransferStore(master).receive({
+          ...packet,
+          'payload': {
+            ...packet['payload'] as Map,
+            'shared_as_cloud_copy': true,
+          },
+        }),
+        throwsFormatException,
+      );
+    },
+  );
   test('wrong-code cooldown expires without restarting the master', () async {
     final db = await database();
     addTearDown(db.close);
@@ -241,7 +339,7 @@ void main() {
     },
   );
   test(
-    'available list is read-only and excludes active, cloud-confirmed and already prepared rows',
+    'available list includes confirmed closed copies and excludes active and already prepared rows',
     () async {
       final db = await database();
       addTearDown(db.close);
@@ -261,7 +359,7 @@ void main() {
       });
       final store = TransferStore(db);
       final available = await store.available();
-      expect(available.map((row) => row['id']).toSet(), {1, 4});
+      expect(available.map((row) => row['id']).toSet(), {1, 3, 4});
       expect(
         available.singleWhere((row) => row['id'] == 4)['needs_review'],
         isTrue,
@@ -276,6 +374,37 @@ void main() {
       expect(await store.available(), isEmpty);
     },
   );
+
+  test(
+    'sync queue skips old cloud confirmations but keeps changed originals',
+    () async {
+      final db = await database();
+      addTearDown(db.close);
+      await insert(db, envio: 1);
+      await db.update(table, {'idNube': 88}, where: 'id = 1');
+      final uuid = '${(await row(db))['sync_uuid']}';
+      await db.insert('LocalTransfers', {
+        'direction': 'outbox',
+        'type': type,
+        'uuid': uuid,
+        'hash': List.filled(64, 'a').join(),
+        'payload': '{}',
+        'local_id': 1,
+        'source': 'operador',
+        'status': 'cloud',
+        'cloud_id': 88,
+        'needs_review': 0,
+        'updated_at': '2026-01-01T00:00:00.000Z',
+      });
+      final store = TransferStore(db);
+      final recent = DateTime.utc(2026, 10, 26);
+      expect(await store.syncQueue(recheckSince: recent), isEmpty);
+
+      await db.update(table, {'envio': 0.5}, where: 'id = 1');
+      expect(await store.syncQueue(recheckSince: recent), hasLength(1));
+    },
+  );
+
   test('telemando does not affect transferred content', () {
     final vector =
         (jsonDecode(
@@ -645,6 +774,76 @@ void main() {
       expect((await TransferStore(master).list()).length, 15);
     },
   );
+
+  test(
+    'one oversized packet is reported and the rest are still delivered',
+    () async {
+      final source = await database();
+      final master = await database();
+      addTearDown(source.close);
+      addTearDown(master.close);
+      await insert(source);
+      await source.insert('Operacion_carguio', {
+        'id': 2,
+        'estado': 'cerrado',
+        'operador': 'OPERADOR DE PRUEBA',
+        'registros': '[{"nota":"${'a' * (3 * 1024 * 1024)}"}]',
+      });
+      final server = LocalTransferServer(TransferStore(master));
+      await server.start(address: InternetAddress.loopbackIPv4, port: 0);
+      addTearDown(server.close);
+      final client = LocalTransferClient();
+      await expectLater(
+        client.send(
+          TransferCoordinator(source, export, Cloud().confirm),
+          'operador',
+          '127.0.0.1',
+          server.code,
+          port: server.port,
+          allowLoopback: true,
+        ),
+        throwsA(
+          predicate(
+            (error) =>
+                '$error'.contains('Entregadas: 1') && '$error'.contains('2 MB'),
+          ),
+        ),
+      );
+      expect(client.deliveredToMaster, 1);
+      expect(client.failed, 1);
+      expect((await TransferStore(master).list(direction: 'inbox')).length, 1);
+    },
+  );
+
+  test('master upload stops at the first network failure', () async {
+    final source = await database();
+    final master = await database();
+    addTearDown(source.close);
+    addTearDown(master.close);
+    await insert(source);
+    await source.insert('Operacion_carguio', {
+      'id': 2,
+      'estado': 'cerrado',
+      'operador': 'OPERADOR DE PRUEBA',
+      'registros': '[]',
+    });
+    final packets = await TransferCoordinator(
+      source,
+      export,
+      Cloud().confirm,
+    ).prepare('operador');
+    expect(packets.length, 2);
+    for (final packet in packets) {
+      await TransferStore(master).receive(packet);
+    }
+    var calls = 0;
+    final result = await TransferCoordinator(master, export, (_, _, _) async {
+      calls++;
+      throw const SocketException('sin internet');
+    }).sync();
+    expect(calls, 1);
+    expect(result.networkFailed, isTrue);
+  });
 
   test('only private addresses are accepted for operator transfer', () {
     for (final host in ['192.168.43.1', '10.0.0.1', '172.20.10.1']) {

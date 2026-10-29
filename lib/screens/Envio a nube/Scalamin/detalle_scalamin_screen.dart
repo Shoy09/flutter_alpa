@@ -418,6 +418,7 @@ class _DetalleSeccionScalaminScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'scalamin',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

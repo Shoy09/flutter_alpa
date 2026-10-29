@@ -417,6 +417,7 @@ class _DetalleSeccionEmpernadorScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'empernador',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

@@ -589,21 +589,30 @@ class _LocalTransferScreenState extends State<LocalTransferScreen> {
               ? null
               : () => _run(() async {
                   final client = LocalTransferClient();
-                  await SyncService().withTransfers(
-                    (coordinator) => client.send(
-                      coordinator,
-                      widget.source,
-                      _host.text.trim(),
-                      _code.text.trim(),
-                    ),
-                  );
+                  String counts() =>
+                      'Confirmadas en nube: ${client.cloudConfirmed}. '
+                      'Entregadas, pendientes de nube: ${client.deliveredToMaster}. '
+                      'Por conciliar: ${client.pendingReview}.';
+                  try {
+                    await SyncService().withLocalTransfers(
+                      (coordinator) => client.send(
+                        coordinator,
+                        widget.source,
+                        _host.text.trim(),
+                        _code.text.trim(),
+                      ),
+                    );
+                  } on StateError catch (error) {
+                    // Las entregadas ya quedaron registradas; mostrar ambas cosas.
+                    throw StateError(
+                      '${counts()}\n${error.message}',
+                    );
+                  }
                   await _saveHost();
                   if (mounted) {
                     setState(
                       () => _message =
-                          'Confirmadas en nube: ${client.cloudConfirmed}. '
-                          'Entregadas, pendientes de nube: ${client.deliveredToMaster}. '
-                          'Por conciliar: ${client.pendingReview}. Las copias originales se conservan.',
+                          '${counts()} Las copias originales se conservan.',
                     );
                   }
                 }),
@@ -631,11 +640,11 @@ class _LocalTransferScreenState extends State<LocalTransferScreen> {
         onPressed: _busy
             ? null
             : () => _run(() async {
-                await SyncService().syncData();
+                final result = await SyncService().syncData();
                 if (mounted) {
                   setState(
                     () => _message =
-                        'Consulta terminada. Revisa el estado de cada operación.',
+                        'Consulta terminada. ${result.message}',
                   );
                 }
               }),
@@ -759,13 +768,14 @@ class _LocalTransferScreenState extends State<LocalTransferScreen> {
   Widget _available() => _card(
     icon: Icons.assignment_turned_in_outlined,
     title: 'Operaciones cerradas disponibles',
-    subtitle: 'Pendientes de nube y todavía sin transferencia registrada.',
+    subtitle:
+        'Copias pendientes y confirmadas en nube, todavía sin transferencia registrada.',
     child: _availableRows.isEmpty
         ? const Padding(
             padding: EdgeInsets.symmetric(vertical: 18),
             child: Text(
-              'No hay operaciones cerradas pendientes. Las activas no se incluyen. '
-              'Cierra la operación y pulsa Actualizar. Las ya confirmadas en nube no necesitan transferirse.',
+              'No hay operaciones cerradas nuevas para compartir. Las activas no se incluyen. '
+              'Puedes compartir también las ya confirmadas en nube; las entregadas aparecen en el historial.',
               style: TextStyle(color: Color(0xFF687888), height: 1.5),
             ),
           )
@@ -813,6 +823,8 @@ class _LocalTransferScreenState extends State<LocalTransferScreen> {
                                   _badge(
                                     row['needs_review'] == true
                                         ? 'Copia para conciliación'
+                                        : row['cloud_confirmed'] == true
+                                        ? 'En nube · compartir copia'
                                         : 'Lista para transferir',
                                     row['needs_review'] == true
                                         ? const Color(0xFFB46916)

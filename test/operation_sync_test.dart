@@ -128,7 +128,7 @@ void main() {
         idempotent: true,
       ).sync('empernador');
       expect(result.message, contains('Dato fuera de rango'));
-      expect(result.message, contains('SYNC-20261024-R2'));
+      expect(result.message, contains('SYNC-20261026-R3'));
       expect((await row(1))['envio'], 3);
       expect((await row(1))['sync_retry_safe'], 1);
     },
@@ -566,7 +566,7 @@ void main() {
   );
 
   test(
-    'A batch that changed before claiming rolls back without sending',
+    'A row that changed before claiming is skipped; the rest of the batch is sent',
     () async {
       await insert(1);
       await insert(2);
@@ -584,9 +584,11 @@ void main() {
           ];
         },
       );
-      await expectLater(subject.sync('carguio'), throwsStateError);
-      expect(api.creates, isEmpty);
-      expect((await row(1))['envio'], 0);
+      final result = await subject.sync('carguio');
+      expect(api.creates.single.single['local_id'], 1);
+      expect(result.created, 1);
+      expect(result.errors.single, contains('Registro local 2'));
+      expect((await row(1))['envio'], 1);
     },
   );
 }

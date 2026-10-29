@@ -40,6 +40,21 @@ class OperationSyncIdentity {
       if (!columns.any((column) => column['name'] == 'sync_cloud_hash')) {
         await db.execute('ALTER TABLE $table ADD COLUMN sync_cloud_hash TEXT');
       }
+      // Seguimiento de fallos por registro: cuántas veces seguidas falló,
+      // el último motivo y cuándo puede reintentarse automáticamente.
+      if (!columns.any((column) => column['name'] == 'sync_failures')) {
+        await db.execute(
+          'ALTER TABLE $table ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      if (!columns.any((column) => column['name'] == 'sync_last_error')) {
+        await db.execute('ALTER TABLE $table ADD COLUMN sync_last_error TEXT');
+      }
+      if (!columns.any((column) => column['name'] == 'sync_next_attempt')) {
+        await db.execute(
+          'ALTER TABLE $table ADD COLUMN sync_next_attempt INTEGER',
+        );
+      }
       // Conserva idNube, envio y todas las claves ya asignadas.
       await db.execute(
         "UPDATE $table SET sync_uuid = $_uuid "

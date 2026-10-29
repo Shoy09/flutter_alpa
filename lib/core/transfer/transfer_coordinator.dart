@@ -168,10 +168,17 @@ class TransferCoordinator {
 
   Future<List<Map<String, dynamic>>> prepare(String source) async {
     for (final entry in TransferContent.tables.entries) {
+      // Las copias ya confirmadas en nube cuyo original sigue enviado con el
+      // mismo ID no necesitan prepararse otra vez; así el costo de cada envío
+      // no crece con el historial. Si el original volvió a pendiente, se revisa.
       final rows = await db.query(
         entry.value,
         where:
-            "estado = 'cerrado' AND (COALESCE(envio, 0) != 1 OR COALESCE(idNube, 0) <= 0)",
+            "estado = 'cerrado' AND NOT EXISTS (SELECT 1 FROM LocalTransfers t "
+            "WHERE t.direction = 'outbox' AND t.type = ? "
+            "AND t.uuid = ${entry.value}.sync_uuid AND t.status = 'cloud' "
+            "AND ${entry.value}.envio = 1 AND ${entry.value}.idNube = t.cloud_id)",
+        whereArgs: [entry.key],
       );
       for (final row in rows) {
         final cloudId = OperationSyncEngine.integer(row['idNube']);
@@ -194,6 +201,13 @@ class TransferCoordinator {
           '${row['sync_uuid']}',
         );
         if (attempts.isNotEmpty) payload['attempted_hashes'] = attempts;
+        final hash = TransferContent.fingerprint(entry.key, payload);
+        if (state == 1 &&
+            cloudId > 0 &&
+            (row['sync_cloud_hash'] == null ||
+                row['sync_cloud_hash'] == hash)) {
+          payload['shared_as_cloud_copy'] = true;
+        }
         final item = {
           'type': entry.key,
           'uuid': payload['sync_uuid'],
@@ -214,6 +228,18 @@ class TransferCoordinator {
               await txn.update(
                 'LocalTransfers',
                 {'status': 'conflict'},
+                where: 'direction = ? AND type = ? AND uuid = ?',
+                whereArgs: ['outbox', entry.key, item['uuid']],
+              );
+            } else if (payload['shared_as_cloud_copy'] == true &&
+                previous.single['status'] != 'cloud') {
+              await txn.update(
+                'LocalTransfers',
+                {
+                  'payload': jsonEncode(payload),
+                  'cloud_id': cloudId,
+                  'needs_review': 0,
+                },
                 where: 'direction = ? AND type = ? AND uuid = ?',
                 whereArgs: ['outbox', entry.key, item['uuid']],
               );
@@ -345,6 +371,15 @@ class TransferCoordinator {
         );
         return false;
       }
+      // Ya confirmado y sin cambios: no reescribir (conserva updated_at para
+      // que la revisión periódica termine al vencer la ventana).
+      if (item['status'] == 'cloud' &&
+          OperationSyncEngine.integer(item['cloud_id']) == cloudId &&
+          OperationSyncEngine.integer(current['idNube']) == cloudId &&
+          OperationSyncEngine.state(current['envio']) == 1 &&
+          current['sync_cloud_hash'] == item['hash']) {
+        return true;
+      }
       await txn.update(
         table,
         {'idNube': cloudId, 'envio': 1, 'sync_cloud_hash': item['hash']},
@@ -366,9 +401,55 @@ class TransferCoordinator {
     });
   }
 
-  Future<OperationSyncResult> sync({String? type}) async {
+  /// Consulta ligera: el original ya no figura como enviado con el mismo ID.
+  Future<bool> _sourceLeftCloud(Map<String, dynamic> item) async {
+    final rows = await db.query(
+      TransferContent.tables[item['type']]!,
+      columns: ['envio', 'idNube'],
+      where: 'id = ? AND sync_uuid = ?',
+      whereArgs: [item['local_id'], item['uuid']],
+    );
+    return rows.isEmpty ||
+        OperationSyncEngine.state(rows.single['envio']) != 1 ||
+        OperationSyncEngine.integer(rows.single['idNube']) !=
+            OperationSyncEngine.integer(item['cloud_id']);
+  }
+
+  /// Ventana en la que se sigue comprobando que el original de una copia ya
+  /// confirmada no haya cambiado. Pasado ese plazo no se revisa en cada ciclo.
+  static const cloudRecheckWindow = Duration(days: 7);
+
+  Future<OperationSyncResult> sync({
+    String? type,
+    bool Function()? shouldStop,
+    DateTime? now,
+  }) async {
     final result = OperationSyncResult();
-    for (final item in await store.list(type: type)) {
+    final recheckSince = (now ?? DateTime.now()).toUtc().subtract(
+      cloudRecheckWindow,
+    );
+    for (final item in await store.syncQueue(
+      type: type,
+      recheckSince: recheckSince,
+    )) {
+      if (item['status'] == 'cloud') {
+        // Detectar modificaciones locales posteriores sin enviar PUT obsoletos.
+        final updated = DateTime.tryParse('${item['updated_at']}');
+        if (item['direction'] == 'outbox' &&
+            (updated == null ||
+                updated.isAfter(recheckSince) ||
+                await _sourceLeftCloud(item))) {
+          await _confirmSource(
+            item,
+            OperationSyncEngine.integer(item['cloud_id']),
+          );
+        }
+        continue;
+      }
+      if (shouldStop?.call() == true) {
+        result.interrupted = true;
+        break;
+      }
       if (item['needs_review'] == 1 || item['status'] == 'review') {
         result.uncertain++;
         result.errors.add(
@@ -380,16 +461,6 @@ class TransferCoordinator {
         result.errors.add(
           'Conflicto ${item['type']} / ${item['uuid']}: requiere revisión.',
         );
-        continue;
-      }
-      if (item['status'] == 'cloud') {
-        // Detectar modificaciones locales posteriores sin enviar PUT obsoletos.
-        if (item['direction'] == 'outbox') {
-          await _confirmSource(
-            item,
-            OperationSyncEngine.integer(item['cloud_id']),
-          );
-        }
         continue;
       }
       try {
@@ -454,11 +525,16 @@ class TransferCoordinator {
         } else {
           throw StateError('Respuesta de nube no confirmada');
         }
-      } catch (_) {
+      } catch (error) {
         result.retryable++;
         result.errors.add(
-          'Transferencia pendiente: no se pudo confirmar con la nube.',
+          'Transferencia pendiente ${item['uuid']}: no se pudo confirmar con la nube. Detalle: $error',
         );
+        // Sin red, cada copia restante solo sumaría otro timeout.
+        if (isNetworkError(error)) {
+          result.networkFailed = true;
+          break;
+        }
       }
     }
     return result;

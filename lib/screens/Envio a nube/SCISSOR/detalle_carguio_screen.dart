@@ -417,6 +417,7 @@ class _DetalleSeccionSCISSORScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'scissor',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

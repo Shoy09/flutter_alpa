@@ -417,6 +417,7 @@ class _DetalleSeccionAnfoChangerScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'anfochanger',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

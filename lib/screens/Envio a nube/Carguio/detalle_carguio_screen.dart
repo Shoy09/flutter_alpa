@@ -417,6 +417,7 @@ class _DetalleSeccionCarguioScreenState
 
         return OperacionCard(
           operacion: item,
+          syncType: 'carguio',
           isSelected: isSelected,
           isEnviado: yaEnviado,
           onTap: () => _handleItemTap(item['id']),

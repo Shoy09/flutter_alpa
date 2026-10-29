@@ -1,4 +1,6 @@
 import 'unconfirmed_recovery.dart';
+import 'dart:convert';
+import 'package:sqflite/sqflite.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/services/envio%20nube/AnfoChanger/exportar_service.dart';
 import 'package:i_miner/services/envio%20nube/Carguio/exportar_service.dart';
@@ -26,7 +28,14 @@ class SyncService {
   final _dbHelper = DatabaseHelper();
   final _api = OperacionesService();
   final _gate = OperationSyncGate();
-  bool _automaticRunning = false;
+  Future<OperationSyncResult>? _automatic;
+
+  /// Tipo por el que continúa el siguiente ciclo si el anterior se pausó,
+  /// para que los últimos tipos no esperen siempre a los primeros.
+  int _nextType = 0;
+
+  /// Resultado del último ciclo automático (para mostrarlo si hace falta).
+  OperationSyncResult? lastAutomatic;
 
   Future<T> withTransfers<T>(
     Future<T> Function(TransferCoordinator) action,
@@ -38,21 +47,36 @@ class SyncService {
       }
       final db = await _dbHelper.database;
       return action(
-        TransferCoordinator(
-          db,
-          (type, rows) async => List<Map<String, dynamic>>.from(
-            await _processes[type]!.$2.prepararDatosParaExportar(
-              rows.map((row) => OperationSyncEngine.integer(row['id'])).toSet(),
-              rows,
-            ),
-          ),
-          _api.confirmClosedTransfer,
-          lookup: _api.lookupSync,
-          resolve: _api.resolveClosedTransfer,
-        ),
+        _transferCoordinator(db),
       );
     });
   }
+
+  /// Transferencias LAN no esperan a que termine una petición a Azure.
+  /// SQLite y las comprobaciones de snapshot protegen escrituras concurrentes.
+  Future<T> withLocalTransfers<T>(
+    Future<T> Function(TransferCoordinator) action,
+  ) async {
+    final user = await _dbHelper.getCurrentUserDni();
+    if (user == null || user != await _dbHelper.getCurrentUserDni()) {
+      throw StateError('La sesión cambió. Abre nuevamente Transferencias.');
+    }
+    final db = await _dbHelper.database;
+    return action(_transferCoordinator(db));
+  }
+
+  TransferCoordinator _transferCoordinator(Database db) => TransferCoordinator(
+    db,
+    (type, rows) async => List<Map<String, dynamic>>.from(
+      await _processes[type]!.$2.prepararDatosParaExportar(
+        rows.map((row) => OperationSyncEngine.integer(row['id'])).toSet(),
+        rows,
+      ),
+    ),
+    _api.confirmClosedTransfer,
+    lookup: _api.lookupSync,
+    resolve: _api.resolveClosedTransfer,
+  );
 
   Future<TransferStore> transferStore() async =>
       TransferStore(await _dbHelper.database);
@@ -82,31 +106,58 @@ class SyncService {
     'volquetes': ('Operacion_volquetes', ExportarVolquetesService(_dbHelper)),
   };
 
-  Future<void> syncData() async {
-    if (_automaticRunning) return;
-    _automaticRunning = true;
+  /// Envío automático de todos los tipos. Si ya hay uno en curso, devuelve
+  /// ese mismo resultado en lugar de terminar sin hacer nada.
+  Future<OperationSyncResult> syncData() =>
+      _automatic ??= _runAutomatic().whenComplete(() => _automatic = null);
+
+  Future<OperationSyncResult> _runAutomatic() async {
+    final total = OperationSyncResult();
     final user = await _dbHelper.getCurrentUserDni();
-    try {
-      if (user == null) return;
-      await _gate.run(() async {
-        if (user != await _dbHelper.getCurrentUserDni()) return;
-        final idempotentCreates = await _api.supportsIdempotentCreates();
-        for (final type in _processes.keys) {
-          if (user != await _dbHelper.getCurrentUserDni()) return;
-          try {
-            final result = await _syncType(
-              type,
-              idempotentCreates: idempotentCreates,
-            );
-            debugPrint('Sync $type: ${result.message}');
-          } catch (error) {
-            debugPrint('No se pudo sincronizar $type: $error');
-          }
+    if (user == null) return total;
+    await _gate.run(() async {
+      if (user != await _dbHelper.getCurrentUserDni()) return;
+      final idempotentCreates = await _api.supportsIdempotentCreates();
+      if (!idempotentCreates && _api.lastCapabilityNetworkError) {
+        // Sin conexión estable: no recorrer los 10 tipos sumando timeouts.
+        total.networkFailed = true;
+        total.errors.add(
+          'Sin conexión estable con la nube. ${_api.lastCapabilityProblem}',
+        );
+        return;
+      }
+      final types = _processes.keys.toList();
+      for (var step = 0; step < types.length; step++) {
+        final index = (_nextType + step) % types.length;
+        final type = types[index];
+        if (_gate.hasWaiters) {
+          // Hay un envío manual o una transferencia esperando: ceder el turno.
+          _nextType = index;
+          total.interrupted = true;
+          break;
         }
-      });
-    } finally {
-      _automaticRunning = false;
-    }
+        if (user != await _dbHelper.getCurrentUserDni()) return;
+        try {
+          final result = await _syncType(
+            type,
+            idempotentCreates: idempotentCreates,
+            shouldStop: () => _gate.hasWaiters,
+          );
+          total.absorb(result);
+          debugPrint('Sync $type: ${result.message}');
+          if (result.networkFailed || result.interrupted) {
+            _nextType = index;
+            break;
+          }
+        } catch (error) {
+          total.errors.add('No se pudo sincronizar $type: $error');
+          debugPrint('No se pudo sincronizar $type: $error');
+        }
+        if (step == types.length - 1) _nextType = 0;
+      }
+    });
+    lastAutomatic = total;
+    return total;
   }
 
   Future<OperationSyncResult> syncSelected(String type, Set<int> ids) async {
@@ -185,10 +236,133 @@ class SyncService {
     });
   }
 
+  Future<Map<String, dynamic>> inspectSyncConflict(
+    String type,
+    int id,
+  ) async {
+    final user = await _dbHelper.getCurrentUserDni();
+    return _gate.run(() async {
+      if (user == null || user != await _dbHelper.getCurrentUserDni()) {
+        throw StateError('La sesión cambió. Abre nuevamente la operación.');
+      }
+      return _inspectSyncConflict(type, id);
+    });
+  }
+
+  Future<Map<String, dynamic>> _inspectSyncConflict(String type, int id) async {
+    final process = _processes[type];
+    if (process == null) throw ArgumentError('Operación no soportada');
+    final db = await _dbHelper.database;
+    final rows = await db.query(
+      process.$1,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) throw StateError('No se encontró la operación local.');
+    final row = Map<String, dynamic>.from(rows.single);
+    if (!OperationSyncEngine.hasIdentity(row)) {
+      throw StateError('La operación no tiene un UUID válido para conciliar.');
+    }
+    final payload = Map<String, dynamic>.from(
+      (await process.$2.prepararDatosParaExportar({id}, [row])).single,
+    )
+      ..['idNube'] = OperationSyncEngine.integer(row['idNube'])
+      ..['envio'] = OperationSyncEngine.finalState(row);
+    final hash = TransferContent.fingerprint(type, payload);
+    final remote = await _api.lookupSync(type, payload, hash);
+    if (remote['sync_uuid'] != row['sync_uuid'] ||
+        remote['hash'] != hash ||
+        !['confirmed', 'conflict', 'missing'].contains(remote['status'])) {
+      throw StateError('La consulta de nube no corresponde a esta operación.');
+    }
+    if (remote['status'] != 'missing' &&
+        (remote['cloud_hash'] is! String ||
+            remote['remote_payload'] is! Map)) {
+      throw StateError('La API no devolvió la versión remota para revisar.');
+    }
+    return {
+      'type': type,
+      'id': id,
+      'uuid': row['sync_uuid'],
+      'payload': payload,
+      'hash': hash,
+      'remote': remote,
+    };
+  }
+
+  Future<void> resolveSyncConflict(
+    Map<String, dynamic> plan, {
+    required bool verifiedAbsent,
+  }) async {
+    final type = '${plan['type']}';
+    final id = OperationSyncEngine.integer(plan['id']);
+    final user = await _dbHelper.getCurrentUserDni();
+    await _gate.run(() async {
+      if (user == null || user != await _dbHelper.getCurrentUserDni()) {
+        throw StateError('La sesión cambió. Abre nuevamente la operación.');
+      }
+      final fresh = await _inspectSyncConflict(type, id);
+      if (fresh['hash'] != plan['hash']) {
+        throw StateError('La operación local cambió. Consulta nuevamente.');
+      }
+      final remote = Map<String, dynamic>.from(fresh['remote'] as Map);
+      final reviewedRemote = Map<String, dynamic>.from(plan['remote'] as Map);
+      if (remote['status'] != reviewedRemote['status'] ||
+          remote['cloud_hash'] != reviewedRemote['cloud_hash']) {
+        throw StateError('La nube cambió. Compara nuevamente las versiones.');
+      }
+      if (remote['status'] == 'missing' && !verifiedAbsent) {
+        throw StateError('Verifica primero la ausencia en nube.');
+      }
+      final db = await _dbHelper.database;
+      final process = _processes[type]!;
+      final store = SqliteOperationSyncStore(db, process.$1);
+      final rows = await store.load({id});
+      if (rows.length != 1 || rows.single['sync_uuid'] != fresh['uuid']) {
+        throw StateError('La operación cambió. Actualiza la lista.');
+      }
+      await db.insert('SyncReviewHistory', {
+        'type': type,
+        'uuid': fresh['uuid'],
+        'local_payload': jsonEncode(fresh['payload']),
+        'remote_payload': remote['remote_payload'] == null
+            ? null
+            : jsonEncode(remote['remote_payload']),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      final answer = await _api.resolveSyncConflict(
+        type,
+        Map<String, dynamic>.from(fresh['payload'] as Map),
+        fresh['hash'] as String,
+        remote['cloud_hash'] as String?,
+        verifiedAbsent,
+      );
+      if (answer['status'] != 'confirmed' ||
+          answer['sync_uuid'] != fresh['uuid'] ||
+          answer['hash'] != fresh['hash'] ||
+          OperationSyncEngine.integer(answer['server_id']) <= 0) {
+        throw StateError(
+          'La nube no confirmó la conciliación${answer['reason'] == null ? '' : ': ${answer['reason']}'}. '
+          'No se marcó el registro como enviado.',
+        );
+      }
+      await store.confirm(
+        id,
+        OperationSyncEngine.integer(answer['server_id']),
+        OperationSyncEngine.finalState(rows.single),
+        cloudHash: answer['cloud_hash'] is String
+            ? answer['cloud_hash'] as String
+            : fresh['hash'] as String,
+      );
+    });
+  }
+
   Future<OperationSyncResult> _syncType(
     String type, {
     Set<int>? ids,
     bool idempotentCreates = false,
+    bool Function()? shouldStop,
   }) async {
     final process = _processes[type];
     if (process == null) {
@@ -208,8 +382,15 @@ class SyncService {
       lookup: _api.lookupSync,
       resolve: _api.resolveClosedTransfer,
     );
-    final transferResult = await transfers.sync(type: type);
+    final transferResult = await transfers.sync(
+      type: type,
+      shouldStop: shouldStop,
+    );
+    if (transferResult.networkFailed || transferResult.interrupted) {
+      return transferResult;
+    }
     final recovery = UnconfirmedRecovery(
+      shouldStop: shouldStop,
       type: type,
       store: SqliteOperationSyncStore(
         database,
@@ -225,7 +406,12 @@ class SyncService {
         ? await recovery.run(ids: ids)
         : OperationSyncResult();
     final remoteConflicts = recovery.conflicts;
+    if (recovered.networkFailed || recovered.interrupted) {
+      recovered.absorb(transferResult);
+      return recovered;
+    }
     final result = await OperationSyncEngine(
+      shouldStop: shouldStop,
       store: SqliteOperationSyncStore(
         database,
         process.$1,
