@@ -30,8 +30,19 @@ class _RegistroOperacionDialogState extends State<RegistroOperacionDialog> {
   late bool isEditing;
 
     // Función auxiliar para comparar tiempos
+  // Normaliza horas guardadas con segundos o fecha antes de compararlas.
+  String _normalizeTime(String time) {
+    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(time);
+    if (match == null) throw FormatException('Hora inválida: $time');
+    final hour = int.parse(match[1]!);
+    final minute = int.parse(match[2]!);
+    if (hour > 23 || minute > 59) {
+      throw FormatException('Hora inválida: $time');
+    }
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+  }
   int _convertToShiftMinutes(String time) {
-  final parts = time.split(':').map(int.parse).toList();
+  final parts = _normalizeTime(time).split(':').map(int.parse).toList();
   int hour = parts[0];
   int minute = parts[1];
 
@@ -125,6 +136,9 @@ int _compareTimes(String time1, String time2) {
       if (maxTime?.contains(' ') == true) {
         maxTime = maxTime!.split(' ')[1];
       }
+    } else {
+      final fin = widget.existingRecord!['hora_final'];
+      if (fin != null && fin.isNotEmpty) maxTime = _normalizeTime(fin);
     }
     
     // Generar todas las opciones de tiempo
@@ -140,18 +154,7 @@ int _compareTimes(String time1, String time2) {
 
   bool _isValidTimeForShift(String time, String shift) {
     try {
-      final hour = int.parse(time.split(':')[0]);
-      final minute = int.parse(time.split(':')[1]);
-      if (shift == "DÍA") {
-        // Validar entre 7:00 y 18:55
-        if (hour < 7 || hour > 18) return false;
-        if (hour == 18 && minute > 55) return false;
-      } else {
-        // Validar entre 19:00-23:55 y 00:00-06:55
-        if (hour > 6 && hour < 19) return false;
-        if (hour == 6 && minute > 55) return false;
-      }
-      return true;
+      return _generateTimeIntervals(shift).contains(_normalizeTime(time));
     } catch (e) {
       return false;
     }
@@ -188,7 +191,8 @@ int _compareTimes(String time1, String time2) {
         .any((item) {
           String horaItem = item["hora_inicio"] ?? '';
           if (horaItem.contains(' ')) horaItem = horaItem.split(' ')[1];
-          return horaItem == selectedTime;
+          return horaItem.isNotEmpty &&
+              _compareTimes(horaItem, selectedTime!) == 0;
         });
     
     if (horaExiste) {
@@ -264,7 +268,7 @@ int _compareTimes(String time1, String time2) {
     setState(() {
       if (widget.existingRecord != null) {
         selectedCodigo = widget.existingRecord!['codigo'];
-        selectedTime = widget.existingRecord!['hora_inicio'];
+        selectedTime = _normalizeTime(widget.existingRecord!['hora_inicio']!);
       } else {
         selectedCodigo = null;
         selectedTime = null;
@@ -279,7 +283,7 @@ int _compareTimes(String time1, String time2) {
     
     if (isEditing && widget.existingRecord != null) {
       selectedCodigo = widget.existingRecord!['codigo'];
-      selectedTime = widget.existingRecord!['hora_inicio'];
+      selectedTime = _normalizeTime(widget.existingRecord!['hora_inicio']!);
     }
   }
 

@@ -67,6 +67,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
     <key>NSCameraUsageDescription</key>
-    <string>Escanear el QR de conexión de la tablet maestra.</string>
+    <string>Tomar fotos de reportes y escanear códigos QR de conexión.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Seleccionar fotos de reportes para revisar e importar sus datos.</string>
 </dict>
 </plist>

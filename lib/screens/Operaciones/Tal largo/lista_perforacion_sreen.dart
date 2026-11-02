@@ -11,6 +11,7 @@ import 'package:i_miner/screens/Operaciones/Tal%20largo/widgets/dialogo_horometr
 import 'package:i_miner/screens/Operaciones/Tal%20largo/widgets/dialogo_no_operativo_formulario_perforacion.dart';
 import 'package:i_miner/screens/Operaciones/Tal%20largo/widgets/show_registro_operacion.dart';
 import 'widgets/operacion_card.dart';
+import 'package:i_miner/screens/Operaciones/importar_foto_screen.dart';
 import 'widgets/botones_estado.dart';
 import 'widgets/tabla_operaciones.dart';
 import 'widgets/botones_acciones_inferiores.dart'; // Asegúrate de importar el nuevo archivo
@@ -286,6 +287,13 @@ BotonesAccionesInferiores(
     backgroundColor: primaryColor,
     foregroundColor: Colors.white,
     actions: [
+      if (widget.rolUsuario?.trim().toLowerCase() == 'master' &&
+          widget.dniUsuario != null)
+        IconButton(
+          icon: const Icon(Icons.document_scanner_outlined, size: 22),
+          tooltip: 'Importar registro desde foto',
+          onPressed: _importarDesdeFoto,
+        ),
       IconButton(
         icon: const Icon(Icons.refresh, size: 20),
         onPressed: _refrescarDatos,
@@ -298,6 +306,28 @@ BotonesAccionesInferiores(
       ),
     ],
   );
+}
+Future<void> _importarDesdeFoto() async {
+  if (widget.rolUsuario?.trim().toLowerCase() != 'master' ||
+      widget.dniUsuario == null) {
+    return;
+  }
+  final result = await Navigator.push<Map<String, dynamic>>(
+    context, MaterialPageRoute(builder: (_) => ImportarFotoScreen(
+      dni: widget.dniUsuario!)));
+  if (result == null || !mounted) return;
+  setState(() {
+    fechaActual = result['fecha'] as String;
+    selectedTurno = result['turno'] as String;
+  });
+  await _fetchOperacionData();
+  if (!mounted) return;
+  final created = operaciones.where((op) => op['id'] == result['id']);
+  if (created.isNotEmpty) {
+    setState(() { operacionActual = created.first; operacionId = result['id'] as int; });
+    await _cargarEstadosOperacion();
+  }
+  if (mounted) mostrarResultadoFoto(context, result, primaryColor);
 }
 void _eliminarRegistro() {
   if (operacionId == null) {
