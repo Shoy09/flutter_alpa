@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:i_miner/config/data/database_helper.dart';
+import 'package:i_miner/models/TipoPerforacion.dart';
 import 'package:i_miner/models/PlanMensual.dart';
 import 'package:i_miner/models/PlanMetraje.dart';
 import 'package:i_miner/models/PlanProduccion.dart';
@@ -80,6 +82,11 @@ final TextEditingController relaveController = TextEditingController();
   // En _DialogoFormularioPerforacionState, agregar:
 List<Map<String, dynamic>> materialesDisponibles = [];
 String? materialSeleccionado;
+
+  // Tipo de labor (select, mismo catálogo que Sostenimiento/SCISSOR)
+  List<TipoPerforacion> tiposLaborCompletos = [];
+  List<String> opcionesTipoLabor = [];
+  String? tipoLaborSeleccionado;
 
   @override
   void initState() {
@@ -164,6 +171,42 @@ Future<void> _cargarMateriales() async {
   }
 }
 
+  /// Tipos de labor desde TipoPerforacion. Si no hay tipos para SCOOPTRAM,
+  /// usa los de PERFORACIÓN HORIZONTAL (FRENTE, BREASTING, REALCE...).
+  Future<void> _cargarTiposLabor() async {
+    try {
+      final dbHelper = DatabaseHelper();
+      var tipos = await dbHelper.getTiposPerforacionByProceso('SCOOPTRAM');
+      if (tipos.isEmpty) {
+        tipos = await dbHelper.getTiposPerforacionByProceso('PERFORACIÓN HORIZONTAL');
+      }
+      final lista = tipos
+          .map((t) => t.nombre)
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      setState(() {
+        tiposLaborCompletos = tipos;
+        opcionesTipoLabor = lista;
+      });
+    } catch (e) {
+      print("Error cargando tipos de labor: $e");
+      setState(() {
+        tiposLaborCompletos = [];
+        opcionesTipoLabor = [];
+      });
+    }
+  }
+
+  int? _obtenerIdTipoLabor(String? nombre) {
+    if (nombre == null) return null;
+    for (final tipo in tiposLaborCompletos) {
+      if (tipo.nombre == nombre) return tipo.id;
+    }
+    return null;
+  }
+
   Future<void> _cargarDatosDesdeBD() async {
     setState(() => isLoading = true);
     
@@ -172,6 +215,7 @@ Future<void> _cargarMateriales() async {
         _cargarPlanesCombinados(),
         _cargarDestinosSCOOPTRAM(),
         _cargarMateriales(),
+        _cargarTiposLabor(),
       ]);
     } catch (e) {
       print("Error cargando datos: $e");
@@ -365,6 +409,9 @@ if (ubicacionInicioSeleccionado != null) {
       rellenoController.text = widget.datosIniciales!['relleno']?.toString() ?? '';
       numeroVolqueteController.text = widget.datosIniciales!['numero_volquete']?.toString() ?? '';
       relaveController.text = widget.datosIniciales!['relave']?.toString() ?? '';
+
+      final tipoLab = widget.datosIniciales!['tipo_labor']?.toString() ?? '';
+      tipoLaborSeleccionado = tipoLab.isNotEmpty ? tipoLab : null;
     });
       
     }
@@ -416,6 +463,8 @@ Future<void> _guardarDatos() async {
     'relleno': rellenoController.text.trim().isEmpty ? '' : rellenoController.text.trim(),
     'numero_volquete': numeroVolqueteController.text.trim().isEmpty ? '' : numeroVolqueteController.text.trim(),
     'relave': relaveController.text.trim().isEmpty ? '' : relaveController.text.trim(),
+    'tipo_labor': tipoLaborSeleccionado ?? '',
+    'tipo_labor_id': _obtenerIdTipoLabor(tipoLaborSeleccionado),
   };
 
   widget.onGuardar(datosFormulario);
@@ -595,10 +644,8 @@ Widget _buildDatoTextField(String label, TextEditingController controller, IconD
                           _buildSeccionUbicacionInicio(),
                           const SizedBox(height: 16),
                           _buildSeccionUbicacionDestino(),
-                          if (_debeMostrarCucharas) ...[
                           const SizedBox(height: 16),
-                          _buildSeccionCucharas(),
-                        ],
+                          _buildSeccionDatosGenerales(),
                         // const SizedBox(height: 16),
                         // _buildSeccionDatos(),  
                           const SizedBox(height: 16),
@@ -1027,7 +1074,34 @@ Widget _buildSeccionUbicacionDestino() {
   );
 }
 
-Widget _buildSeccionCucharas() {
+// Sección única: Tipo de labor, N° volquete, N° cucharas y Material.
+// Cucharas y Material se ocultan en los códigos 111 y 112.
+Widget _buildSeccionDatosGenerales() {
+  // Arriba Cucharas y Material; debajo Tipo de labor y N° volquete.
+  final campos = <Widget>[
+    if (_debeMostrarCucharas) _buildTextFieldCucharas(),
+    if (_debeMostrarCucharas) _buildDropdownMaterial(),
+    _buildDropdownTipoLabor(),
+    _buildTextFieldNumeroVolquete(),
+  ];
+
+  // Siempre 2 campos por fila.
+  const porFila = 2;
+  final filas = <Widget>[];
+  for (var i = 0; i < campos.length; i += porFila) {
+    final grupo = campos.sublist(i, (i + porFila).clamp(0, campos.length));
+    if (filas.isNotEmpty) filas.add(const SizedBox(height: 8));
+    filas.add(Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var j = 0; j < grupo.length; j++) ...[
+          if (j > 0) const SizedBox(width: 8),
+          Expanded(child: grupo[j]),
+        ],
+      ],
+    ));
+  }
+
   return Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
@@ -1046,33 +1120,102 @@ Widget _buildSeccionCucharas() {
                 color: widget.primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Icon(Icons.calculate, size: 14, color: widget.primaryColor),
+              child: Icon(Icons.assignment, size: 14, color: widget.primaryColor),
             ),
             const SizedBox(width: 6),
             Text(
-              'Cucharas y Material',
+              'Datos Generales',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: widget.primaryColor),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        isSmallScreen
-            ? Column(
-                children: [
-                  _buildTextFieldCucharas(),
-                  const SizedBox(height: 8),
-                  _buildDropdownMaterial(),
-                ],
-              )
-            : Row(
-                children: [
-                  Expanded(child: _buildTextFieldCucharas()),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildDropdownMaterial()),
-                ],
-              ),
+        ...filas,
       ],
     ),
+  );
+}
+
+Widget _buildDropdownTipoLabor() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Tipo de Labor',
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: widget.primaryColor),
+      ),
+      const SizedBox(height: 4),
+      Container(
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: (tipoLaborSeleccionado != null &&
+                    opcionesTipoLabor.contains(tipoLaborSeleccionado))
+                ? tipoLaborSeleccionado
+                : null,
+            hint: Text(
+              opcionesTipoLabor.isEmpty ? 'No hay opciones' : 'Seleccione tipo de labor',
+              style: TextStyle(
+                fontSize: 11,
+                color: isEditable ? Colors.grey.shade600 : Colors.grey.shade400,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+            isExpanded: true,
+            icon: Icon(Icons.arrow_drop_down, size: 18, color: widget.primaryColor),
+            style: const TextStyle(fontSize: 12, color: Colors.black87),
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            items: opcionesTipoLabor.map((String item) {
+              return DropdownMenuItem<String>(
+                value: item,
+                child: Text(item, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+            onChanged: isEditable
+                ? (v) => setState(() => tipoLaborSeleccionado = v)
+                : null,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildTextFieldNumeroVolquete() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'N° de Volquete',
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: widget.primaryColor),
+      ),
+      const SizedBox(height: 4),
+      TextField(
+        controller: numeroVolqueteController,
+        enabled: isEditable,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        decoration: InputDecoration(
+          hintText: 'Ingrese número',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+        ),
+        style: const TextStyle(fontSize: 12),
+      ),
+    ],
   );
 }
 
