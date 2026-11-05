@@ -41,18 +41,31 @@ class PhotoStore {
           'Revisa el registro existente para evitar duplicarlo.',
         );
       }
-      return txn.insert(draft.proceso.tabla, {
+      // Las tablas no tienen la misma cabecera: Scalamin y Scissor guardan la
+      // guardia en `guardia` (no `seccion`) y solo las de perforación tienen
+      // `modelo_equipo`.
+      final columnas = {
+        for (final c in await txn.rawQuery(
+          'PRAGMA table_info(${draft.proceso.tabla})',
+        ))
+          c['name'] as String,
+      };
+      final cabecera = <String, Object?>{
         for (final k in [
           'fecha',
           'turno',
-          'seccion',
           'operador',
           'jefe_guardia',
           'equipo',
           'n_equipo',
           'modelo_equipo',
         ])
-          k: h[k]!.trim(),
+          if (columnas.contains(k)) k: h[k]!.trim(),
+        columnas.contains('seccion') ? 'seccion' : 'guardia':
+            h['seccion']!.trim(),
+      };
+      return txn.insert(draft.proceso.tabla, {
+        ...cabecera,
         'registros': jsonEncode(
           draft.registros(
             estadosPorCodigo,

@@ -73,15 +73,27 @@ class PhotoService {
           )
           .timeout(const Duration(seconds: 100));
       if (response.statusCode != 200) {
+        // El servidor explica el motivo (ej. "Gemini respondió con error 503").
+        String? motivo;
+        try {
+          motivo = (jsonDecode(response.body) as Map)['error']?.toString();
+        } catch (_) {}
+        if (kDebugMode) {
+          debugPrint('[FOTO] HTTP ${response.statusCode}: ${response.body}');
+        }
         throw PhotoImportException(switch (response.statusCode) {
           401 => 'La sesión expiró. Inicia sesión nuevamente.',
           403 => 'Solo un usuario master puede leer registros por foto.',
           413 => 'La foto es demasiado grande.',
-          429 => 'Se alcanzó el límite de lecturas. Intenta más tarde.',
+          429 => motivo == null || motivo.isEmpty
+              ? 'Se alcanzó el límite de lecturas. Intenta más tarde.'
+              : motivo,
           404 || 503 =>
             'La lectura de fotos con Gemini todavía no está habilitada en el servidor.',
           _ =>
-            'No se pudo leer la foto. Puedes reintentar o completar los datos manualmente.',
+            'No se pudo leer la foto (error ${response.statusCode}'
+                '${motivo == null || motivo.isEmpty ? '' : ': $motivo'}). '
+                'Puedes reintentar o completar los datos manualmente.',
         });
       }
       if (kDebugMode) {

@@ -423,8 +423,10 @@ class _ImportarFotoState extends State<ImportarFotoScreen> {
     for (final campo in widget.proceso.campos) {
       final opciones = _opcionesDe(campo);
       for (final (i, actividad) in draft.actividades.indexed) {
-        final valor = actividad.datos[campo.key]!;
+        var valor = actividad.datos[campo.key]!;
         if (valor.isEmpty) continue;
+        // Origen/destino son labores: "C 730" se busca como CM_730.
+        if (campo.autocompletar) valor = PhotoDraft.formatearLabor(valor);
         final numero = photoNumber(valor);
         final opcion = opciones.where(
           (o) => campo.numero && numero != null
@@ -640,168 +642,19 @@ class _ImportarFotoState extends State<ImportarFotoScreen> {
   }
 
   void _mostrarSelectorOperador() {
-    var busqueda = '';
-    final searchCtrl = TextEditingController();
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
-          final filtrados = busqueda.isEmpty
-              ? _operadores
-              : _operadores
-                    .where(
-                      (o) => o.toLowerCase().contains(busqueda.toLowerCase()),
-                    )
-                    .toList();
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            ),
-            child: DraggableScrollableSheet(
-              initialChildSize: 0.6,
-              minChildSize: 0.4,
-              maxChildSize: 0.9,
-              expand: false,
-              builder: (ctx, scrollController) => Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 10),
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Seleccionar operador',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: _primaryColor,
-                            ),
-                          ),
-                          if (_draft.cabecera['operador']!.isNotEmpty &&
-                              !_operadores.contains(_draft.cabecera['operador']))
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'En la hoja: ${_draft.cabecera['operador']}',
-                                style: TextStyle(color: Colors.grey.shade700),
-                              ),
-                            ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: searchCtrl,
-                            autofocus: true,
-                            onChanged: (v) => setModalState(() => busqueda = v),
-                            decoration: InputDecoration(
-                              hintText: 'Buscar operador...',
-                              prefixIcon: const Icon(
-                                Icons.search,
-                                color: _primaryColor,
-                              ),
-                              suffixIcon: busqueda.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(Icons.clear, size: 18),
-                                      onPressed: () {
-                                        searchCtrl.clear();
-                                        setModalState(() => busqueda = '');
-                                      },
-                                    )
-                                  : null,
-                              filled: true,
-                              fillColor: Colors.grey.shade100,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: filtrados.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No se encontraron operadores',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              controller: scrollController,
-                              itemCount: filtrados.length,
-                              itemBuilder: (ctx, i) {
-                                final nombre = filtrados[i];
-                                final seleccionado =
-                                    nombre == _draft.cabecera['operador'];
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor: seleccionado
-                                        ? _primaryColor
-                                        : Colors.grey.shade300,
-                                    child: const Icon(
-                                      Icons.person,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    nombre,
-                                    style: TextStyle(
-                                      fontWeight: seleccionado
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      color: seleccionado
-                                          ? _primaryColor
-                                          : Colors.black87,
-                                    ),
-                                  ),
-                                  trailing: seleccionado
-                                      ? const Icon(
-                                          Icons.check_circle,
-                                          color: _primaryColor,
-                                        )
-                                      : null,
-                                  onTap: () {
-                                    _draft.cabecera['operador'] = nombre;
-                                    _changed();
-                                    Navigator.pop(ctx);
-                                  },
-                                );
-                              },
-                            ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
-              ),
-            ),
-          );
+      builder: (_) => _SelectorOperador(
+        operadores: _operadores,
+        actual: _draft.cabecera['operador']!,
+        onSelected: (nombre) {
+          _draft.cabecera['operador'] = nombre;
+          _changed();
         },
       ),
-    ).whenComplete(searchCtrl.dispose);
+    );
   }
 
   Future<void> _pick(ImageSource source) async {
@@ -2364,6 +2217,186 @@ class _PhotoActivityEditorState extends State<_PhotoActivityEditor> {
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Buscador de operador. El buscador vive en el propio panel y se libera
+/// cuando el panel sale de pantalla (no al cerrarse, que aún se anima).
+class _SelectorOperador extends StatefulWidget {
+  final List<String> operadores;
+  final String actual;
+  final ValueChanged<String> onSelected;
+  const _SelectorOperador({
+    required this.operadores,
+    required this.actual,
+    required this.onSelected,
+  });
+  @override
+  State<_SelectorOperador> createState() => _SelectorOperadorState();
+}
+
+class _SelectorOperadorState extends State<_SelectorOperador> {
+  final _searchCtrl = TextEditingController();
+  var _busqueda = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtrados = _busqueda.isEmpty
+        ? widget.operadores
+        : widget.operadores
+              .where(
+                (o) => o.toLowerCase().contains(_busqueda.toLowerCase()),
+              )
+              .toList();
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Seleccionar operador',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _ImportarFotoState._primaryColor,
+                      ),
+                    ),
+                    if (widget.actual.isNotEmpty &&
+                        !widget.operadores.contains(widget.actual))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'En la hoja: ${widget.actual}',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _searchCtrl,
+                      autofocus: true,
+                      onChanged: (v) => setState(() => _busqueda = v),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar operador...',
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: _ImportarFotoState._primaryColor,
+                        ),
+                        suffixIcon: _busqueda.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _busqueda = '');
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: filtrados.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No se encontraron operadores',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: filtrados.length,
+                        itemBuilder: (ctx, i) {
+                          final nombre = filtrados[i];
+                          final seleccionado =
+                              nombre == widget.actual;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: seleccionado
+                                  ? _ImportarFotoState._primaryColor
+                                  : Colors.grey.shade300,
+                              child: const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                            title: Text(
+                              nombre,
+                              style: TextStyle(
+                                fontWeight: seleccionado
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: seleccionado
+                                    ? _ImportarFotoState._primaryColor
+                                    : Colors.black87,
+                              ),
+                            ),
+                            trailing: seleccionado
+                                ? const Icon(
+                                    Icons.check_circle,
+                                    color: _ImportarFotoState._primaryColor,
+                                  )
+                                : null,
+                            onTap: () {
+                              widget.onSelected(nombre);
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),

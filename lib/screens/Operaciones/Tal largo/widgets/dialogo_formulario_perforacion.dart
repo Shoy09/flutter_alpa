@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:i_miner/services/labor_por_voz.dart';
 import 'package:i_miner/config/data/database_helper.dart';
 import 'package:i_miner/models/PlanMensual.dart';
 import 'package:i_miner/models/PlanProduccion.dart';
 import 'package:i_miner/models/PlanMetraje.dart';
 import 'package:i_miner/models/TipoPerforacion.dart';
+
+// Dictado de labor por voz: oculto por ahora. Cambiar a true para mostrar el micrófono.
+const bool _mostrarMicrofono = false;
 
 // Modelo simple para las barras fila
 class BarraFila {
@@ -57,6 +62,7 @@ final String codigo;
 
 class _DialogoFormularioPerforacionState extends State<DialogoFormularioPerforacion> {
   bool isEditable = false;
+  bool _escuchandoLabor = false;
   bool isLoading = true;
   bool isSmallScreen = false;
 
@@ -397,8 +403,39 @@ Future<void> _guardarDatos() async {
     );
   }
 
+  Future<void> _dictarLabor() async {
+    if (_escuchandoLabor) {
+      await LaborPorVoz.cancelar();
+      return;
+    }
+    ubicacionFocusNode.unfocus();
+    setState(() => _escuchandoLabor = true);
+    try {
+      final voz = await LaborPorVoz.escuchar();
+      if (!mounted || voz.trim().isEmpty) return;
+      final labor = LaborPorVoz.normalizar(voz);
+      if (labor.isEmpty) return;
+      setState(() {
+        ubicacionController.text = labor;
+        laborSeleccionado = labor;
+        opcionesUbicacionFiltradas = opcionesUbicacionCombinadas
+            .where((item) => item.toUpperCase().contains(labor.toUpperCase()))
+            .toList();
+        mostrarSugerencias = opcionesUbicacionFiltradas.isNotEmpty;
+      });
+      _mostrarSnackbar('Se entendió: "$voz". Revise la labor antes de guardar.', widget.primaryColor);
+    } on PlatformException catch (e) {
+      if (mounted) _mostrarSnackbar(e.message ?? 'No se pudo reconocer la voz.', Colors.orange);
+    } on MissingPluginException {
+      if (mounted) _mostrarSnackbar('Instale la nueva versión Android para usar el micrófono.', Colors.orange);
+    } finally {
+      if (mounted) setState(() => _escuchandoLabor = false);
+    }
+  }
+
   @override
   void dispose() {
+    if (_escuchandoLabor) LaborPorVoz.cancelar();
     observacionesController.dispose();
     ubicacionController.dispose();
     ubicacionFocusNode.dispose();
@@ -497,8 +534,10 @@ Future<void> _guardarDatos() async {
     hintText: 'Buscar o escribir nueva ubicación...',
     hintStyle: const TextStyle(fontSize: 11),
     prefixIcon: Icon(Icons.search, size: 16, color: widget.primaryColor),
-    suffixIcon: ubicacionController.text.isNotEmpty && isEditable
-        ? IconButton(
+    suffixIcon: isEditable ? Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (ubicacionController.text.isNotEmpty && !_escuchandoLabor) IconButton(
             icon: Icon(Icons.clear, size: 14, color: Colors.grey.shade500),
             onPressed: () {
               ubicacionController.clear();
@@ -508,8 +547,16 @@ Future<void> _guardarDatos() async {
                 laborSeleccionado = null;
               });
             },
-          )
-        : null,
+          ),
+        if (_mostrarMicrofono && LaborPorVoz.disponible) IconButton(
+          tooltip: _escuchandoLabor ? 'Cancelar dictado' : 'Dictar labor sin internet',
+          icon: Icon(_escuchandoLabor ? Icons.stop_circle : Icons.mic,
+            color: _escuchandoLabor ? Colors.red : widget.primaryColor),
+          onPressed: _dictarLabor,
+        ),
+      ],
+    ) : null,
+    helperText: _escuchandoLabor ? 'Preparando / escuchando… diga la labor y haga una pausa.' : null,
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(6),
       borderSide: BorderSide(color: Colors.grey.shade300),
@@ -521,6 +568,7 @@ Future<void> _guardarDatos() async {
   ),
   onChanged: (text) {
     setState(() {
+      laborSeleccionado = null;
       if (text.isEmpty) {
         opcionesUbicacionFiltradas = List.from(opcionesUbicacionCombinadas);
         mostrarSugerencias = false;
@@ -1165,7 +1213,7 @@ Future<void> _guardarDatos() async {
         ? 'Guardar datos'
         : 'Ingrese una labor para poder guardar',
     child: ElevatedButton(
-      onPressed: _puedeGuardar ? _guardarDatos : null,
+      onPressed: _puedeGuardar && !_escuchandoLabor ? _guardarDatos : null,
       style: ElevatedButton.styleFrom(
         backgroundColor: widget.primaryColor,
         foregroundColor: Colors.white,

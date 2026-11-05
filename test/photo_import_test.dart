@@ -607,6 +607,89 @@ void main() {
     }
   });
 
+  test('C, CR and cámara before a number are always CM', () {
+    for (final (leida, esperada) in [
+      ('C730', 'CM_730'),
+      ('C 730', 'CM_730'),
+      ('c-730', 'CM_730'),
+      ('CR 730', 'CM_730'),
+      ('Cámara 70', 'CM_70'),
+      ('CAMARA70', 'CM_70'),
+      ('CM 730', 'CM_730'),
+      ('CX 730', 'CX_730'),
+      ('CH 730', 'CM_730'),
+      ('CH730', 'CM_730'),
+      ('CHX 730', 'CHX_730'),
+    ]) {
+      expect(PhotoDraft.formatearLabor(leida), esperada, reason: leida);
+    }
+    final d = PhotoDraft(
+      proceso: PhotoProceso.scalamin,
+      cabecera: draft().cabecera,
+      actividades: [
+        PhotoActivity(datos: {'codigo': '101', 'labor': '730', 'tipo_labor': 'C'}),
+      ],
+    )..completarLabores({'101': 'OPERATIVO'});
+    expect(d.actividades.single.datos['labor'], 'CM_730');
+  });
+
+  test('a photo day shift may start at 06:00', () {
+    final d = PhotoDraft(
+      proceso: PhotoProceso.empernador,
+      cabecera: {...draft().cabecera, 'turno': 'DÍA'},
+      actividades: [
+        PhotoActivity(datos: {'codigo': '302', 'hora_inicio': '6.05', 'hora_final': '6.20'}),
+        PhotoActivity(datos: {'codigo': '101', 'hora_inicio': '6.20', 'hora_final': '6.35'}),
+      ],
+    )..normalizarHoras();
+    expect(d.actividades[0].datos['hora_inicio'], '06:05');
+    expect(d.validate({'101': 'OPERATIVO', '302': 'DEMORA'}), isEmpty);
+  });
+
+  test('hours that are not multiples of 5 are rounded and flagged', () {
+    final d = PhotoDraft(
+      proceso: PhotoProceso.empernador,
+      cabecera: {...draft().cabecera, 'turno': 'DÍA'},
+      actividades: [
+        PhotoActivity(datos: {'codigo': '101', 'hora_inicio': '7.12', 'hora_final': '8.43'}),
+        PhotoActivity(datos: {'codigo': '302', 'hora_inicio': '8.43', 'hora_final': '9.00'}),
+      ],
+    )..normalizarHoras();
+    expect(d.actividades[0].datos['hora_inicio'], '07:10');
+    expect(d.actividades[0].datos['hora_final'], '08:45');
+    expect(d.actividades[1].datos['hora_inicio'], '08:45');
+    expect(d.actividades[1].datos['hora_final'], '09:00');
+    expect(d.advertencias.where((a) => a.contains('redondeada')), hasLength(2));
+    expect(d.validate({'101': 'OPERATIVO', '302': 'DEMORA'}), isEmpty);
+  });
+
+  test('a horometer reading read as labor is discarded and flagged', () {
+    final d = PhotoDraft(
+      proceso: PhotoProceso.scalamin,
+      cabecera: draft().cabecera,
+      horometros: {
+        'diesel': {'inicio': '4520.0', 'final': '4528.5'},
+      },
+      actividades: [
+        PhotoActivity(datos: {'codigo': '101', 'labor': '4523.4'}),
+        PhotoActivity(datos: {'codigo': '101', 'labor': '4525'}),
+        PhotoActivity(datos: {'codigo': '105', 'labor': '416'}),
+        PhotoActivity(datos: {'codigo': '101', 'labor': 'P.7'}),
+      ],
+    );
+    expect(d.esLecturaHorometro('4523.4'), isTrue);
+    expect(d.esLecturaHorometro('4525'), isTrue);
+    expect(d.esLecturaHorometro('416'), isFalse);
+    expect(d.esLecturaHorometro('P.7'), isFalse);
+    d.completarLabores({'101': 'OPERATIVO', '105': 'OPERATIVO'});
+    expect(d.actividades[2].datos['labor'], '416');
+    expect(d.actividades[3].datos['labor'], 'P_7');
+    expect(
+      d.advertencias.where((a) => a.contains('lectura de horómetro')),
+      hasLength(2),
+    );
+  });
+
   group('save as master, once per equipo/fecha/turno', () {
     late Database db;
     setUp(() async {
@@ -646,6 +729,34 @@ void main() {
         expect(await db.query('Operacion_tal_largo'), hasLength(1));
       },
     );
+    test('scalamin table (guardia, no modelo_equipo) is written too', () async {
+      await db.execute(
+        'CREATE TABLE Operacion_Scalamin ('
+        'id INTEGER PRIMARY KEY, fecha TEXT, turno TEXT, guardia TEXT, operador TEXT, '
+        'jefe_guardia TEXT, equipo TEXT, n_equipo TEXT, '
+        'registros TEXT, horometros TEXT, condiciones_equipo TEXT, check_list TEXT, '
+        'control_llantas TEXT, estado TEXT, envio INTEGER)',
+      );
+      final base = draft();
+      final sheet = PhotoDraft(
+        proceso: PhotoProceso.scalamin,
+        cabecera: base.cabecera,
+        actividades: [
+          PhotoActivity(
+            datos: {
+              'codigo': '101',
+              'hora_inicio': '23:55',
+              'hora_final': '00:10',
+              'metros_lineales': '12',
+            },
+          ),
+        ],
+      );
+      await save(sheet: sheet);
+      final row = (await db.query('Operacion_Scalamin')).single;
+      expect(row['guardia'], 'B');
+      expect(row['n_equipo'], '02');
+    });
     test('operator is denied even if the UI requests a save', () async {
       await db.update('Usuario', {'rol': 'Operador'});
       await expectLater(save(), throwsStateError);

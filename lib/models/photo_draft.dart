@@ -247,7 +247,8 @@ class PhotoDraft {
     }
     final turno = cabecera['turno']!;
     int? previo;
-    for (final actividad in actividades) {
+    for (final (fila, actividad) in actividades.indexed) {
+      final redondeadas = <String>[];
       for (final campo in ['hora_inicio', 'hora_final']) {
         final hora = _leerHora(actividad.datos[campo]!);
         if (hora == null) continue;
@@ -255,8 +256,19 @@ class PhotoDraft {
             _elegirHora(hora, turno, previo) ??
             _elegirHora(hora, turno, null) ??
             hora.first;
-        actividad.datos[campo] = _hhmm(elegida);
+        // La app registra de 5 en 5 minutos: 7:12 → 07:10, 7:13 → 07:15.
+        final redondeada = ((elegida + 2) ~/ 5 * 5) % 1440;
+        if (redondeada != elegida) {
+          redondeadas.add('${_hhmm(elegida)} → ${_hhmm(redondeada)}');
+        }
+        actividad.datos[campo] = _hhmm(redondeada);
         previo = shiftMinutes(actividad.datos[campo]!, turno) ?? previo;
+      }
+      if (redondeadas.isNotEmpty) {
+        advertencias.add(
+          'Actividad ${fila + 1}: hora redondeada a 5 minutos '
+          '(${redondeadas.join(', ')}); revísala con la hoja.',
+        );
       }
     }
   }
@@ -315,7 +327,7 @@ class PhotoDraft {
       final s = shiftMinutes(_hhmm(opcion), turno);
       if (s == null) continue;
       final dentro = switch (turno) {
-        'DÍA' => s >= 390 && s <= 1110,
+        'DÍA' => s >= inicioDia && s <= 1110,
         'NOCHE' => s >= 1110 && s <= 1830,
         _ => true,
       };
@@ -327,6 +339,10 @@ class PhotoDraft {
     }
     return elegida;
   }
+
+  /// En la hoja el turno DÍA puede empezar a las 06:00 (el formulario manual
+  /// empieza a las 06:30); al leer la foto se acepta desde las 06:00.
+  static const inicioDia = 360;
 
   static String _hhmm(int minutos) =>
       '${(minutos ~/ 60).toString().padLeft(2, '0')}:'
@@ -410,6 +426,8 @@ class PhotoDraft {
 
   /// Labores siempre en mayúsculas y unidas con "_": "tj 493" y "TJ493" →
   /// "TJ_493".
+  /// La cámara se escribe "C 730", "CR 730", "CH 730" o "Cámara 70": siempre
+  /// es CM.
   static String formatearLabor(String texto) => texto
       .trim()
       .toUpperCase()
@@ -419,14 +437,46 @@ class PhotoDraft {
         (m) => '${m[1]}_',
       )
       .replaceAll(RegExp('_+'), '_')
-      .replaceAll(RegExp(r'^_|_$'), '');
+      .replaceAll(RegExp(r'^_|_$'), '')
+      .replaceFirst(RegExp(r'^(C|CR|CH|CAM|CAMARA|CÁMARA)_(?=\d)'), 'CM_');
+
+  /// Gemini a veces copia en la labor el H. INICIAL/FINAL de la fila (columnas
+  /// vecinas). Una labor nunca es un número con decimales ("4523.4") ni un
+  /// número dentro del rango de los horómetros del pie de la hoja.
+  bool esLecturaHorometro(String texto) {
+    final t = texto.trim();
+    if (!RegExp(r'^\d+([.,]\d+)?$').hasMatch(t)) return false;
+    if (RegExp(r'[.,]').hasMatch(t)) return true;
+    final valor = double.parse(t);
+    for (final h in horometros.values) {
+      final lecturas = [h['inicio'], h['final']]
+          .map((v) => v == null ? null : photoNumber(v))
+          .whereType<double>()
+          .where((v) => v > 0)
+          .toList();
+      if (lecturas.isEmpty) continue;
+      lecturas.sort();
+      if (valor >= lecturas.first - 1 && valor <= lecturas.last + 1) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   /// Da formato a las labores y completa las actividades de perforación sin
   /// labor: en la hoja la UBICACIÓN suele escribirse una sola vez (a veces en
   /// vertical) para varias filas. Toma la labor escrita más cercana, primero
   /// la de arriba, y avisa para confirmarlo.
   void completarLabores(Map<String, String> estadosPorCodigo) {
-    for (final actividad in actividades) {
+    for (final (fila, actividad) in actividades.indexed) {
+      final leida = actividad.datos['labor']!.trim();
+      if (esLecturaHorometro(leida)) {
+        actividad.datos['labor'] = '';
+        advertencias.add(
+          'Actividad ${fila + 1}: se leyó "$leida" como labor, pero parece una '
+          'lectura de horómetro; se dejó la labor vacía. Revísala con la hoja.',
+        );
+      }
       var labor = formatearLabor(actividad.datos['labor']!);
       // Las letras ("TJ") pueden llegar en tipo_labor, o mal ubicadas en ala o
       // nivel; solo se toman si son letras sueltas y la labor es solo número.
@@ -444,7 +494,7 @@ class PhotoDraft {
       if (labor.isNotEmpty &&
           tipo.isNotEmpty &&
           !labor.split('_').contains(tipo)) {
-        labor = '${tipo}_$labor';
+        labor = formatearLabor('${tipo}_$labor');
       }
       actividad.datos['labor'] = labor;
     }
@@ -519,15 +569,27 @@ class PhotoDraft {
               : '$label: completa inicio y fin en formato 24 h (HH:mm).',
         );
       } else {
-        final min = turno == 'NOCHE' ? 1110 : 390;
+        final min = turno == 'NOCHE' ? 1110 : inicioDia;
         final maxStart = turno == 'NOCHE' ? 1765 : 1045;
         final maxEnd = turno == 'NOCHE' ? 1830 : 1110;
-        if (start < min ||
-            start > maxStart ||
-            start % 5 != 0 ||
-            (end != null && (end > maxEnd || end <= start))) {
+        final inicio = row.datos['hora_inicio']!;
+        final fin = row.datos['hora_final']!;
+        if (start % 5 != 0) {
           errors.add(
-            '$label: revisa las horas y el turno (inicio cada 5 minutos).',
+            '$label: el inicio $inicio no es múltiplo de 5 minutos '
+            '(el formulario solo admite :00, :05, :10…); corrígelo.',
+          );
+        } else if (start < min || start > maxStart) {
+          errors.add(
+            '$label: el inicio $inicio está fuera del turno $turno; '
+            'revisa la hora o el turno.',
+          );
+        } else if (end != null && end <= start) {
+          errors.add('$label: el fin $fin no es posterior al inicio $inicio.');
+        } else if (end != null && end > maxEnd) {
+          errors.add(
+            '$label: el fin $fin está fuera del turno $turno; '
+            'revisa la hora o el turno.',
           );
         }
         if (!starts.add(start) ||
